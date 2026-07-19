@@ -1,0 +1,11 @@
+[package]
+name = "aura-lite-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Utils for AuraLite - math, chunking, threading helpers"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+rayon = { version = "1.10" }
+crossbeam = { version = "0.8" }
+fastrand = "2.1"

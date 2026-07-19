@@ -1,0 +1,32 @@
+[package]
+name = "aura-lite-web"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bootstrap, canvas adapter, asset loader"
+
+[features]
+web = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
+default = ["web"]
+
+[dependencies]
+aura-lite-core = { path = "../core" }
+aura-lite-elements = { path = "../elements" }
+aura-lite-utils = { path = "../utils" }
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "console",
+    "Blob",
+    "Url",
+    "HtmlElement",
+    "FileReader",
+    "FileList",
+    "File",
+    "Event",
+] }
+log = "0.4"

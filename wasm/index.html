@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AuraLite Powder - WASM Demo</title>
+<style>
+body { margin:0; background:#111; color:#eee; font-family: sans-serif; display:flex; flex-direction:column; align-items:center; }
+canvas { border:1px solid #555; margin-top:10px; image-rendering: pixelated; }
+#info { margin:10px; max-width:800px; }
+</style>
+</head>
+<body>
+<h1>AuraLite Powder - Nuclear Falling Sand (WASM)</h1>
+<canvas id="canvas" width="512" height="512"></canvas>
+<div id="info">
+<p>Demo: U-235 pile with thermal neutron, D+T fusion sample at 30,30.</p>
+<p>Native build: <code>cargo run --release</code></p>
+<p>Controls in native: paint, zoom wheel, right-drag pan, 1-6 quick select, Space pause, C clear, S save.</p>
+<div id="log"></div>
+</div>
+<script type="module">
+import init, { start_sim, create_simulation } from "./pkg/aura_lite_wasm.js";
+async function run() {
+  await init();
+  console.log("WASM module loaded");
+  try {
+    start_sim("canvas");
+    document.getElementById("log").innerText = "Simulation started - rendered one frame. Open console for logs.";
+  } catch(e) {
+    console.error(e);
+    document.getElementById("log").innerText = "Error: " + e;
+  }
+
+  // Benchmark
+  const { run_tick_test } = await import("./pkg/aura_lite_wasm.js");
+  // run_tick_test is exported
+}
+run();
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+[package]
+name = "aura-lite-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM entry for AuraLite"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["web"]
+web = ["aura-lite-web/web", "dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
+
+[dependencies]
+aura-lite-core = { path = "../crates/core" }
+aura-lite-web = { path = "../crates/web" }
+aura-lite-elements = { path = "../crates/elements" }
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "console",
+    "Blob",
+    "Url",
+    "HtmlElement",
+] }
+log = "0.4"

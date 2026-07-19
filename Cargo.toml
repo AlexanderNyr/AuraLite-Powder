@@ -1,0 +1,105 @@
+[package]
+name = "aura_lite"
+version = "0.1.0"
+edition = "2021"
+description = "AuraLite Powder - Cross-Platform Falling-Sand Simulation with Advanced Nuclear Physics"
+authors = ["AuraLite Team"]
+license = "MIT"
+default-run = "aura_lite"
+
+[workspace]
+members = [
+    "crates/core",
+    "crates/elements",
+    "crates/renderer",
+    "crates/ui",
+    "crates/io",
+    "crates/utils",
+    "crates/web",
+    "wasm",
+]
+
+[features]
+default = ["softbuffer-renderer", "native-ui"]
+softbuffer-renderer = [
+    "aura-lite-renderer/softbuffer",
+    "dep:pixels",
+    "dep:winit",
+    "dep:softbuffer",
+]
+wgpu-renderer = [
+    "aura-lite-renderer/wgpu",
+    "dep:wgpu",
+    "dep:pixels",
+]
+native-ui = [
+    "aura-lite-ui/native-ui",
+    "dep:egui",
+    "dep:egui-winit",
+    "dep:rfd",
+    "aura-lite-renderer/softbuffer",
+    "dep:winit",
+    "dep:pixels",
+]
+web = [
+    "aura-lite-web/web",
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:web-sys",
+]
+compression = [
+    "aura-lite-io/compression",
+    "dep:zstd",
+]
+
+[dependencies]
+aura-lite-core = { path = "crates/core" }
+aura-lite-elements = { path = "crates/elements" }
+aura-lite-renderer = { path = "crates/renderer" }
+aura-lite-ui = { path = "crates/ui" }
+aura-lite-io = { path = "crates/io" }
+aura-lite-utils = { path = "crates/utils" }
+aura-lite-web = { path = "crates/web", optional = true }
+
+pixels = { version = "0.15", optional = true }
+winit = { version = "0.29", optional = true }
+softbuffer = { version = "0.4", optional = true }
+wgpu = { version = "0.20", optional = true }
+image = { version = "0.25", features = ["png", "jpeg"] }
+serde = { version = "1.0", features = ["derive"] }
+bincode = { version = "2.0", features = ["serde"] }
+zstd = { version = "0.13", optional = true }
+rayon = { version = "1.10" }
+crossbeam = { version = "0.8", features = ["std"] }
+egui = { version = "0.28", optional = true }
+egui-winit = { version = "0.28", optional = true }
+rfd = { version = "0.15", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "Blob",
+    "Url",
+    "console",
+    "HtmlElement",
+    "FileReader",
+    "FileList",
+    "File",
+    "Event",
+] }
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+fastrand = "2.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "simulation_bench"
+harness = false
+path = "benches/simulation_bench.rs"

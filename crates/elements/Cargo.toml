@@ -1,0 +1,13 @@
+[package]
+name = "aura-lite-elements"
+version = "0.1.0"
+edition = "2021"
+description = "Element registry, nuclear materials, reactions"
+
+[dependencies]
+aura-lite-core = { path = "../core" }
+aura-lite-utils = { path = "../utils" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+log = "0.4"
+fastrand = "2.1"
