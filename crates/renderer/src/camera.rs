@@ -1,4 +1,4 @@
-use aura_lite_utils::{Vec2, Rect};
+use aura_lite_utils::{Rect, Vec2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -13,11 +13,11 @@ impl ThreadPool {
         Self::with_threads(cpus)
     }
     pub fn with_threads(n: usize) -> Self {
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build()
-            .ok();
-        Self { inner: pool, num_threads: n }
+        let pool = ThreadPoolBuilder::new().num_threads(n).build().ok();
+        Self {
+            inner: pool,
+            num_threads: n,
+        }
     }
     pub fn install<F, R>(&self, f: F) -> R
     where

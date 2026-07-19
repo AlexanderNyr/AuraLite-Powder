@@ -33,14 +33,14 @@ impl Rgba {
 
 impl Default for Rgba {
     fn default() -> Self {
-        Self::new(0,0,0,0)
+        Self::new(0, 0, 0, 0)
     }
 }
 
 /// Common palette
 pub mod palette {
     use super::Rgba;
-    pub const AIR: Rgba = Rgba::new(0,0,0,0);
+    pub const AIR: Rgba = Rgba::new(0, 0, 0, 0);
     pub const SAND: Rgba = Rgba::rgb(194, 178, 128);
     pub const WATER: Rgba = Rgba::rgb(64, 164, 223);
     pub const STONE: Rgba = Rgba::rgb(120, 120, 120);

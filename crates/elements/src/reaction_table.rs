@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReactionOutcome {
@@ -16,7 +16,11 @@ pub struct ReactionPair(pub u16, pub u16);
 impl ReactionPair {
     pub fn new(a: u16, b: u16) -> Self {
         // order independent? keep sorted for lookup
-        if a <= b { Self(a,b) } else { Self(b,a) }
+        if a <= b {
+            Self(a, b)
+        } else {
+            Self(b, a)
+        }
     }
 }
 
@@ -26,7 +30,9 @@ pub struct ReactionTable {
 
 impl ReactionTable {
     pub fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
 
     pub fn insert(&mut self, a: u16, b: u16, outcome: ReactionOutcome) {
@@ -44,89 +50,133 @@ impl ReactionTable {
         use aura_lite_core::element_id::*;
 
         // Fission reactions
-        table.insert(U235, NEUTRON_THERMAL, ReactionOutcome {
-            probability: 0.85,
-            products: vec![FISSION_PRODUCTS],
-            energy_change: 200.0,
-            particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, GAMMA],
-            temperature_delta: 500,
-        });
-        table.insert(U235, NEUTRON_FAST, ReactionOutcome {
-            probability: 0.35,
-            products: vec![FISSION_PRODUCTS],
-            energy_change: 200.0,
-            particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
-            temperature_delta: 400,
-        });
-        table.insert(PU239, NEUTRON_THERMAL, ReactionOutcome {
-            probability: 0.90,
-            products: vec![FISSION_PRODUCTS],
-            energy_change: 210.0,
-            particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, NEUTRON_FAST],
-            temperature_delta: 550,
-        });
-        table.insert(PU239, NEUTRON_FAST, ReactionOutcome {
-            probability: 0.40,
-            products: vec![FISSION_PRODUCTS],
-            energy_change: 210.0,
-            particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
-            temperature_delta: 450,
-        });
-        table.insert(U238, NEUTRON_FAST, ReactionOutcome {
-            probability: 0.25,
-            products: vec![FISSION_PRODUCTS],
-            energy_change: 190.0,
-            particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
-            temperature_delta: 350,
-        });
+        table.insert(
+            U235,
+            NEUTRON_THERMAL,
+            ReactionOutcome {
+                probability: 0.85,
+                products: vec![FISSION_PRODUCTS],
+                energy_change: 200.0,
+                particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, GAMMA],
+                temperature_delta: 500,
+            },
+        );
+        table.insert(
+            U235,
+            NEUTRON_FAST,
+            ReactionOutcome {
+                probability: 0.35,
+                products: vec![FISSION_PRODUCTS],
+                energy_change: 200.0,
+                particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
+                temperature_delta: 400,
+            },
+        );
+        table.insert(
+            PU239,
+            NEUTRON_THERMAL,
+            ReactionOutcome {
+                probability: 0.90,
+                products: vec![FISSION_PRODUCTS],
+                energy_change: 210.0,
+                particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, NEUTRON_FAST],
+                temperature_delta: 550,
+            },
+        );
+        table.insert(
+            PU239,
+            NEUTRON_FAST,
+            ReactionOutcome {
+                probability: 0.40,
+                products: vec![FISSION_PRODUCTS],
+                energy_change: 210.0,
+                particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
+                temperature_delta: 450,
+            },
+        );
+        table.insert(
+            U238,
+            NEUTRON_FAST,
+            ReactionOutcome {
+                probability: 0.25,
+                products: vec![FISSION_PRODUCTS],
+                energy_change: 190.0,
+                particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
+                temperature_delta: 350,
+            },
+        );
 
         // Fusion D+T
-        table.insert(DEUTERIUM, TRITIUM, ReactionOutcome {
-            probability: 0.05, // requires high temp check elsewhere
-            products: vec![HELIUM],
-            energy_change: 500.0,
-            particle_spawns: vec![NEUTRON_FAST],
-            temperature_delta: 1200,
-        });
+        table.insert(
+            DEUTERIUM,
+            TRITIUM,
+            ReactionOutcome {
+                probability: 0.05, // requires high temp check elsewhere
+                products: vec![HELIUM],
+                energy_change: 500.0,
+                particle_spawns: vec![NEUTRON_FAST],
+                temperature_delta: 1200,
+            },
+        );
 
         // Moderation: fast neutron + water -> thermal
-        table.insert(NEUTRON_FAST, WATER, ReactionOutcome {
-            probability: 0.4,
-            products: vec![WATER],
-            energy_change: -5.0,
-            particle_spawns: vec![NEUTRON_THERMAL],
-            temperature_delta: 10,
-        });
-        table.insert(NEUTRON_FAST, HEAVY_WATER, ReactionOutcome {
-            probability: 0.5,
-            products: vec![HEAVY_WATER],
-            energy_change: -3.0,
-            particle_spawns: vec![NEUTRON_THERMAL],
-            temperature_delta: 5,
-        });
-        table.insert(NEUTRON_FAST, GRAPHITE, ReactionOutcome {
-            probability: 0.3,
-            products: vec![GRAPHITE],
-            energy_change: -4.0,
-            particle_spawns: vec![NEUTRON_THERMAL],
-            temperature_delta: 8,
-        });
+        table.insert(
+            NEUTRON_FAST,
+            WATER,
+            ReactionOutcome {
+                probability: 0.4,
+                products: vec![WATER],
+                energy_change: -5.0,
+                particle_spawns: vec![NEUTRON_THERMAL],
+                temperature_delta: 10,
+            },
+        );
+        table.insert(
+            NEUTRON_FAST,
+            HEAVY_WATER,
+            ReactionOutcome {
+                probability: 0.5,
+                products: vec![HEAVY_WATER],
+                energy_change: -3.0,
+                particle_spawns: vec![NEUTRON_THERMAL],
+                temperature_delta: 5,
+            },
+        );
+        table.insert(
+            NEUTRON_FAST,
+            GRAPHITE,
+            ReactionOutcome {
+                probability: 0.3,
+                products: vec![GRAPHITE],
+                energy_change: -4.0,
+                particle_spawns: vec![NEUTRON_THERMAL],
+                temperature_delta: 8,
+            },
+        );
 
         // Absorption: boron absorbs neutrons
-        table.insert(BORON, NEUTRON_THERMAL, ReactionOutcome {
-            probability: 0.8,
-            products: vec![FALLOUT],
-            energy_change: 2.0,
-            particle_spawns: vec![ALPHA],
-            temperature_delta: 50,
-        });
-        table.insert(BORON, NEUTRON_FAST, ReactionOutcome {
-            probability: 0.6,
-            products: vec![FALLOUT],
-            energy_change: 2.0,
-            particle_spawns: vec![ALPHA],
-            temperature_delta: 50,
-        });
+        table.insert(
+            BORON,
+            NEUTRON_THERMAL,
+            ReactionOutcome {
+                probability: 0.8,
+                products: vec![FALLOUT],
+                energy_change: 2.0,
+                particle_spawns: vec![ALPHA],
+                temperature_delta: 50,
+            },
+        );
+        table.insert(
+            BORON,
+            NEUTRON_FAST,
+            ReactionOutcome {
+                probability: 0.6,
+                products: vec![FALLOUT],
+                energy_change: 2.0,
+                particle_spawns: vec![ALPHA],
+                temperature_delta: 50,
+            },
+        );
 
         table
     }

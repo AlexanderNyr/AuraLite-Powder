@@ -39,7 +39,7 @@ pub fn is_valid_id(id: u16) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ElementKind {
     Air,
-    Sand,       // granular
+    Sand, // granular
     Liquid,
     Solid,
     Gas,
@@ -54,7 +54,9 @@ pub fn kind_for_id(id: u16) -> ElementKind {
         SAND => ElementKind::Sand,
         WATER | HEAVY_WATER => ElementKind::Liquid,
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON => ElementKind::Solid,
-        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | TRITIUM | DEUTERIUM | LITHIUM | HELIUM | MOLTEN_FUEL | FALLOUT | TNT => ElementKind::Solid, // some could be considered different but keep solid for physics
+        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | TRITIUM | DEUTERIUM
+        | LITHIUM | HELIUM | FALLOUT | TNT => ElementKind::Solid,
+        MOLTEN_FUEL => ElementKind::Molten,
         HYDROGEN => ElementKind::Gas,
         NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA => ElementKind::Radiation,
         _ => ElementKind::Air,
@@ -97,7 +99,7 @@ pub fn density_for_id(id: u16) -> f32 {
 }
 
 pub fn is_fissile(id: u16) -> bool {
-    matches!(id, U235 | U238 | PU239 | PU240)
+    matches!(id, U235 | U238 | PU239 | PU240 | MOLTEN_FUEL)
 }
 
 pub fn is_moderator(id: u16) -> bool {
@@ -109,7 +111,7 @@ pub fn is_radiation(id: u16) -> bool {
 }
 
 pub fn is_liquid(id: u16) -> bool {
-    matches!(id, WATER | HEAVY_WATER)
+    matches!(id, WATER | HEAVY_WATER | MOLTEN_FUEL)
 }
 
 pub fn is_gas(id: u16) -> bool {

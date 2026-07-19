@@ -28,18 +28,24 @@ impl Grid {
     }
 
     pub fn get(&self, x: u32, y: u32) -> Option<&Particle> {
-        if x >= self.width || y >= self.height { return None; }
+        if x >= self.width || y >= self.height {
+            return None;
+        }
         Some(&self.particles[self.index(x, y)])
     }
 
     pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Particle> {
-        if x >= self.width || y >= self.height { return None; }
+        if x >= self.width || y >= self.height {
+            return None;
+        }
         let idx = self.index(x, y);
         Some(&mut self.particles[idx])
     }
 
     pub fn set(&mut self, x: u32, y: u32, p: Particle) {
-        if x >= self.width || y >= self.height { return; }
+        if x >= self.width || y >= self.height {
+            return;
+        }
         let idx = self.index(x, y);
         self.particles[idx] = p;
     }

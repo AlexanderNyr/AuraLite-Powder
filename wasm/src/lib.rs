@@ -1,7 +1,7 @@
 //! WASM entry - exports start_sim()
 
+use aura_lite_web::{WasmSimulation, WebSimulation};
 use wasm_bindgen::prelude::*;
-use aura_lite_web::{WebSimulation, WasmSimulation};
 
 #[wasm_bindgen]
 extern "C" {
@@ -30,7 +30,7 @@ pub fn create_simulation(width: u32, height: u32) -> WasmSimulation {
 pub fn run_tick_test(width: u32, height: u32, ticks: u32) -> u32 {
     let mut sim = WebSimulation::new(width, height);
     // populate some particles
-    for y in 0..height/2 {
+    for y in 0..height / 2 {
         for x in 0..width {
             if (x + y) % 3 == 0 {
                 sim.set_particle(x, y, 1); // sand

@@ -1,1 +1,1 @@
-pub use aura_lite_utils::chunking::{ChunkPool, ChunkMeta, CHUNK_SIZE};
+pub use aura_lite_utils::chunking::{ChunkMeta, ChunkPool, CHUNK_SIZE};

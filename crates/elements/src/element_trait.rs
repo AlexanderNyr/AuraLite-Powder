@@ -30,9 +30,19 @@ pub struct ReactionCtx {
 
 #[derive(Clone, Debug)]
 pub enum ReactionEvent {
-    Fission { products: Vec<u16>, neutrons: u32, energy: f32 },
-    Fusion { product: u16, energy: f32 },
-    Decay { daughter: u16, radiation: u16 },
+    Fission {
+        products: Vec<u16>,
+        neutrons: u32,
+        energy: f32,
+    },
+    Fusion {
+        product: u16,
+        energy: f32,
+    },
+    Decay {
+        daughter: u16,
+        radiation: u16,
+    },
     NoReaction,
 }
 

@@ -1,14 +1,14 @@
 //! Renderer crate - abstract RenderBackend with Softbuffer + Wgpu
 
 pub mod backend;
+pub mod camera;
+pub mod color_map;
 pub mod softbuffer_backend;
 pub mod wgpu_backend;
-pub mod color_map;
-pub mod camera;
 
 pub use backend::RenderBackend;
-pub use color_map::color_for_element;
 pub use camera::Camera;
+pub use color_map::color_for_element;
 
 #[cfg(feature = "softbuffer")]
 pub use softbuffer_backend::SoftbufferBackend;

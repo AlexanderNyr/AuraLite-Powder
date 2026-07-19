@@ -24,7 +24,10 @@ impl AtomicF32 {
             let current_f = f32::from_bits(current);
             let new_f = current_f + v;
             let new = new_f.to_bits();
-            match self.inner.compare_exchange_weak(current, new, order, Ordering::Relaxed) {
+            match self
+                .inner
+                .compare_exchange_weak(current, new, order, Ordering::Relaxed)
+            {
                 Ok(_) => return current_f,
                 Err(_) => continue,
             }

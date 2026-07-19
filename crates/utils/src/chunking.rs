@@ -31,10 +31,18 @@ impl ChunkMeta {
     pub fn mark_dirty(&mut self, local_x: u32, local_y: u32) {
         self.is_empty = false;
         self.active = true;
-        if local_x < self.dirty_min_x { self.dirty_min_x = local_x; }
-        if local_y < self.dirty_min_y { self.dirty_min_y = local_y; }
-        if local_x > self.dirty_max_x { self.dirty_max_x = local_x; }
-        if local_y > self.dirty_max_y { self.dirty_max_y = local_y; }
+        if local_x < self.dirty_min_x {
+            self.dirty_min_x = local_x;
+        }
+        if local_y < self.dirty_min_y {
+            self.dirty_min_y = local_y;
+        }
+        if local_x > self.dirty_max_x {
+            self.dirty_max_x = local_x;
+        }
+        if local_y > self.dirty_max_y {
+            self.dirty_max_y = local_y;
+        }
     }
     pub fn clear(&mut self) {
         self.dirty_min_x = CHUNK_SIZE as u32;
@@ -62,13 +70,19 @@ impl ChunkPool {
                 metas.push(ChunkMeta::new(cx, cy));
             }
         }
-        Self { chunks_x, chunks_y, metas }
+        Self {
+            chunks_x,
+            chunks_y,
+            metas,
+        }
     }
     pub fn index(&self, chunk_x: u32, chunk_y: u32) -> usize {
         (chunk_y * self.chunks_x + chunk_x) as usize
     }
     pub fn get_mut(&mut self, cx: u32, cy: u32) -> Option<&mut ChunkMeta> {
-        if cx >= self.chunks_x || cy >= self.chunks_y { return None; }
+        if cx >= self.chunks_x || cy >= self.chunks_y {
+            return None;
+        }
         let idx = self.index(cx, cy);
         self.metas.get_mut(idx)
     }
@@ -76,8 +90,9 @@ impl ChunkPool {
         *self = Self::new(grid_width, grid_height);
     }
     /// Return list of active chunk indices for parallel processing
-    pub fn active_chunks(&self) -> Vec<(u32,u32)> {
-        self.metas.iter()
+    pub fn active_chunks(&self) -> Vec<(u32, u32)> {
+        self.metas
+            .iter()
             .filter(|m| m.active || !m.is_empty)
             .map(|m| (m.x, m.y))
             .collect()

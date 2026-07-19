@@ -40,7 +40,9 @@ pub mod fusion {
     pub const FUSION_THRESHOLD: u16 = 1500;
 
     pub fn can_fuse(a: u16, b: u16, temp: u16) -> bool {
-        if temp < FUSION_THRESHOLD { return false; }
+        if temp < FUSION_THRESHOLD {
+            return false;
+        }
         (a == DEUTERIUM && b == TRITIUM) || (a == TRITIUM && b == DEUTERIUM)
     }
 
@@ -62,11 +64,36 @@ pub mod decay {
 
     pub fn decay_chain() -> Vec<DecayStep> {
         vec![
-            DecayStep { parent: U238, daughter: DEPLETED_URANIUM, radiation: ALPHA, half_life_ticks: 2_000_000 },
-            DecayStep { parent: U235, daughter: FISSION_PRODUCTS, radiation: ALPHA, half_life_ticks: 1_000_000 },
-            DecayStep { parent: PU239, daughter: U235, radiation: ALPHA, half_life_ticks: 500_000 },
-            DecayStep { parent: PU240, daughter: PU239, radiation: ALPHA, half_life_ticks: 400_000 },
-            DecayStep { parent: TRITIUM, daughter: HELIUM, radiation: BETA, half_life_ticks: 100_000 },
+            DecayStep {
+                parent: U238,
+                daughter: DEPLETED_URANIUM,
+                radiation: ALPHA,
+                half_life_ticks: 2_000_000,
+            },
+            DecayStep {
+                parent: U235,
+                daughter: FISSION_PRODUCTS,
+                radiation: ALPHA,
+                half_life_ticks: 1_000_000,
+            },
+            DecayStep {
+                parent: PU239,
+                daughter: U235,
+                radiation: ALPHA,
+                half_life_ticks: 500_000,
+            },
+            DecayStep {
+                parent: PU240,
+                daughter: PU239,
+                radiation: ALPHA,
+                half_life_ticks: 400_000,
+            },
+            DecayStep {
+                parent: TRITIUM,
+                daughter: HELIUM,
+                radiation: BETA,
+                half_life_ticks: 100_000,
+            },
         ]
     }
 
@@ -89,7 +116,11 @@ pub mod criticality {
         mass_count >= threshold
     }
 
-    pub fn criticality_factor(fissile_count: u32, moderator_count: u32, absorber_count: u32) -> f32 {
+    pub fn criticality_factor(
+        fissile_count: u32,
+        moderator_count: u32,
+        absorber_count: u32,
+    ) -> f32 {
         // simplified k-effective
         let production = fissile_count as f32 * 2.5;
         let moderation = (moderator_count as f32 * 0.3).min(1.5);

@@ -29,8 +29,13 @@ pub fn show_palette(ui: &mut Ui, app: &mut AppState) {
             }
             // show color preview
             ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                ui.painter().rect_filled(rect, 2.0, egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]));
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                ui.painter().rect_filled(
+                    rect,
+                    2.0,
+                    egui::Color32::from_rgba_premultiplied(color[0], color[1], color[2], color[3]),
+                );
             });
         }
     });
@@ -44,11 +49,21 @@ pub fn show_tool_panel(ui: &mut Ui, app: &mut AppState) {
         ui.add(egui::Slider::new(&mut app.tools.brush.radius, 1..=20));
     });
     ui.horizontal(|ui| {
-        if ui.button("Brush").clicked() { app.tools.brush.tool = crate::brush::BrushTool::Brush; }
-        if ui.button("Line").clicked() { app.tools.brush.tool = crate::brush::BrushTool::Line; }
-        if ui.button("Fill").clicked() { app.tools.brush.tool = crate::brush::BrushTool::Fill; }
-        if ui.button("Eraser").clicked() { app.tools.brush.tool = crate::brush::BrushTool::Eraser; }
-        if ui.button("Rect").clicked() { app.tools.brush.tool = crate::brush::BrushTool::Rectangle; }
+        if ui.button("Brush").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Brush;
+        }
+        if ui.button("Line").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Line;
+        }
+        if ui.button("Fill").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Fill;
+        }
+        if ui.button("Eraser").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Eraser;
+        }
+        if ui.button("Rect").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Rectangle;
+        }
     });
     ui.label(format!("Current tool: {:?}", app.tools.brush.tool));
     ui.add(egui::Slider::new(&mut app.tools.brush.temperature, 0..=5000).text("Temperature"));
@@ -74,14 +89,24 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
     ui.label(format!("Fission: {}", app.simulation.fission_count));
     ui.label(format!("Fusion: {}", app.simulation.fusion_count));
     ui.label(format!("Decay: {}", app.simulation.decay_count));
-    ui.label(format!("Neutron queue: {}", app.simulation.neutron_queue.len()));
+    ui.label(format!(
+        "Neutron queue: {}",
+        app.simulation.neutron_queue.len()
+    ));
 }
 
 #[cfg(feature = "native-ui")]
 pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
     ui.heading("Simulation");
     ui.horizontal(|ui| {
-        if ui.button(if app.controller.paused { "Resume" } else { "Pause" }).clicked() {
+        if ui
+            .button(if app.controller.paused {
+                "Resume"
+            } else {
+                "Pause"
+            })
+            .clicked()
+        {
             app.controller.paused = !app.controller.paused;
         }
         if ui.button("Step").clicked() {
@@ -102,8 +127,16 @@ pub fn show_save_load(ui: &mut Ui, app: &mut AppState) {
     if ui.button("Save (dialog)").clicked() {
         #[cfg(feature = "native-ui")]
         {
-            if let Some(path) = rfd::FileDialog::new().add_filter("Aura save", &["aura", "json"]).save_file() {
-                let _ = aura_lite_io::save_to_file(&path, &app.simulation.grid, &app.simulation.settings, app.save_load.compression_enabled);
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Aura save", &["aura", "json"])
+                .save_file()
+            {
+                let _ = aura_lite_io::save_to_file(
+                    &path,
+                    &app.simulation.grid,
+                    &app.simulation.settings,
+                    app.save_load.compression_enabled,
+                );
                 app.save_load.last_save_path = Some(path.display().to_string());
             }
         }
@@ -111,7 +144,10 @@ pub fn show_save_load(ui: &mut Ui, app: &mut AppState) {
     if ui.button("Load (dialog)").clicked() {
         #[cfg(feature = "native-ui")]
         {
-            if let Some(path) = rfd::FileDialog::new().add_filter("Aura save", &["aura", "json"]).pick_file() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Aura save", &["aura", "json"])
+                .pick_file()
+            {
                 if let Ok((grid, settings)) = aura_lite_io::load_from_file(&path) {
                     app.simulation.grid = grid;
                     app.simulation.settings = settings;

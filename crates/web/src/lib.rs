@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 use aura_lite_core::SimulationState;
 
 #[cfg(feature = "web")]
-use web_sys::{HtmlCanvasElement, CanvasRenderingContext2d, ImageData};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 pub struct WebSimulation {
     pub sim: SimulationState,
@@ -29,15 +29,17 @@ impl WebSimulation {
 
     pub fn set_particle(&mut self, x: u32, y: u32, element_id: u16) {
         if x < self.sim.grid.width && y < self.sim.grid.height {
-            self.sim.grid.set(x, y, aura_lite_core::Particle::new(element_id, 293));
+            self.sim
+                .grid
+                .set(x, y, aura_lite_core::Particle::new(element_id, 293));
         }
     }
 
     pub fn get_rgba_buffer(&self) -> Vec<u8> {
         // use element colors
-        self.sim.grid.to_rgba_buffer(|id| {
-            aura_lite_elements::registry::color_for_id(id)
-        })
+        self.sim
+            .grid
+            .to_rgba_buffer(|id| aura_lite_elements::registry::color_for_id(id))
     }
 
     #[cfg(feature = "web")]
@@ -50,7 +52,11 @@ impl WebSimulation {
         let buffer = self.get_rgba_buffer();
         // web-sys ImageData expects Uint8ClampedArray
         let clamped = wasm_bindgen::Clamped(buffer.as_slice());
-        let image_data = ImageData::new_with_u8_clamped_array_and_sh(clamped, self.sim.grid.width, self.sim.grid.height)?;
+        let image_data = ImageData::new_with_u8_clamped_array_and_sh(
+            clamped,
+            self.sim.grid.width,
+            self.sim.grid.height,
+        )?;
         ctx.put_image_data(&image_data, 0.0, 0.0)?;
         Ok(())
     }
@@ -67,7 +73,9 @@ pub struct WasmSimulation {
 impl WasmSimulation {
     #[wasm_bindgen(constructor)]
     pub fn new(width: u32, height: u32) -> Self {
-        Self { inner: WebSimulation::new(width, height) }
+        Self {
+            inner: WebSimulation::new(width, height),
+        }
     }
 
     pub fn tick(&mut self) {
@@ -90,8 +98,11 @@ impl WasmSimulation {
 #[cfg(feature = "web")]
 pub fn start_sim(canvas_id: &str) -> Result<(), JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-    let document = window.document().ok_or_else(|| JsValue::from_str("no document"))?;
-    let canvas = document.get_element_by_id(canvas_id)
+    let document = window
+        .document()
+        .ok_or_else(|| JsValue::from_str("no document"))?;
+    let canvas = document
+        .get_element_by_id(canvas_id)
         .ok_or_else(|| JsValue::from_str("canvas not found"))?
         .dyn_into::<HtmlCanvasElement>()?;
 

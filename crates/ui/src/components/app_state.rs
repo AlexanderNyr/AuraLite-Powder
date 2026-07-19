@@ -1,6 +1,6 @@
+use crate::brush::BrushSettings;
 use aura_lite_core::SimulationState;
 use aura_lite_renderer::Camera;
-use crate::brush::BrushSettings;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,7 +57,7 @@ impl PalettePanel {
 #[derive(Default)]
 pub struct ToolPanel {
     pub brush: BrushSettings,
-    pub line_start: Option<(i32,i32)>,
+    pub line_start: Option<(i32, i32)>,
 }
 
 #[derive(Default)]
@@ -106,7 +106,12 @@ pub struct InfoPanel {
 
 impl Default for InfoPanel {
     fn default() -> Self {
-        Self { fps: 0.0, tick_rate: 0.0, particle_count: 0, active_reactions: 0 }
+        Self {
+            fps: 0.0,
+            tick_rate: 0.0,
+            particle_count: 0,
+            active_reactions: 0,
+        }
     }
 }
 
@@ -131,7 +136,11 @@ pub struct GridView {
 
 impl Default for GridView {
     fn default() -> Self {
-        Self { zoom: 1.0, pan_x: 0.0, pan_y: 0.0 }
+        Self {
+            zoom: 1.0,
+            pan_x: 0.0,
+            pan_y: 0.0,
+        }
     }
 }
 
@@ -139,7 +148,11 @@ impl AppState {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             simulation: SimulationState::new(width, height, 42),
-            controller: SimulationController { grid_width: width, grid_height: height, ..Default::default() },
+            controller: SimulationController {
+                grid_width: width,
+                grid_height: height,
+                ..Default::default()
+            },
             camera: Camera::new(width as f32, height as f32),
             grid_view: GridView::default(),
             palette: PalettePanel::default(),

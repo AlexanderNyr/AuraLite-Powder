@@ -5,10 +5,16 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 }
 
 pub fn clamp(v: f32, min: f32, max: f32) -> f32 {
-    if v < min { min } else if v > max { max } else { v }
+    if v < min {
+        min
+    } else if v > max {
+        max
+    } else {
+        v
+    }
 }
 
-pub fn bresenham_line(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32,i32)> {
+pub fn bresenham_line(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
     let mut points = Vec::new();
     let mut x = x0;
     let mut y = y0;
@@ -19,15 +25,21 @@ pub fn bresenham_line(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32,i32)> {
     let mut err = dx + dy;
     loop {
         points.push((x, y));
-        if x == x1 && y == y1 { break; }
+        if x == x1 && y == y1 {
+            break;
+        }
         let e2 = 2 * err;
         if e2 >= dy {
-            if x == x1 { break; }
+            if x == x1 {
+                break;
+            }
             err += dy;
             x += sx;
         }
         if e2 <= dx {
-            if y == y1 { break; }
+            if y == y1 {
+                break;
+            }
             err += dx;
             y += sy;
         }
