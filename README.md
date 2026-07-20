@@ -117,4 +117,4 @@ Place Deuterium + Tritium adjacent at >1500K to trigger fusion → Helium + fast
 
 ## License
 
-MIT
+Apache-2.0

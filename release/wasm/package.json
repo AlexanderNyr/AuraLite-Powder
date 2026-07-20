@@ -1,0 +1,16 @@
+{
+  "name": "aura-lite-wasm",
+  "type": "module",
+  "description": "WASM entry for AuraLite",
+  "version": "0.1.0",
+  "files": [
+    "aura_lite_wasm_bg.wasm",
+    "aura_lite_wasm.js",
+    "aura_lite_wasm.d.ts"
+  ],
+  "main": "aura_lite_wasm.js",
+  "types": "aura_lite_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
