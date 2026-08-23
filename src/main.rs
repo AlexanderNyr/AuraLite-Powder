@@ -2,6 +2,14 @@
     not(any(feature = "softbuffer-renderer", feature = "wgpu-renderer")),
     allow(dead_code, unreachable_code)
 )]
+// Hide the extra console window on consumer Windows builds.
+#![cfg_attr(
+    all(
+        target_os = "windows",
+        any(feature = "softbuffer-renderer", feature = "wgpu-renderer")
+    ),
+    windows_subsystem = "windows"
+)]
 
 use aura_lite_core::SimulationState;
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]

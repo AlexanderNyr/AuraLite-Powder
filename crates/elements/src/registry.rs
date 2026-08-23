@@ -381,6 +381,30 @@ pub fn all_definitions() -> Vec<ElementDef> {
             false,
             0,
         ),
+        def(
+            STEAM,
+            "Steam",
+            Rgba::new(220, 220, 230, 180),
+            0.05,
+            400,
+            0,
+            false,
+            false,
+            false,
+            0,
+        ),
+        def(
+            ICE,
+            "Ice",
+            Rgba::rgb(180, 220, 255),
+            0.92,
+            260,
+            0,
+            false,
+            false,
+            false,
+            0,
+        ),
     ]
 }
 
@@ -445,6 +469,8 @@ pub fn name_for_id(id: u16) -> &'static str {
         MOLTEN_FUEL => "Molten Fuel",
         FALLOUT => "Fallout",
         BORON => "Boron",
+        STEAM => "Steam",
+        ICE => "Ice",
         _ => "Unknown",
     }
 }

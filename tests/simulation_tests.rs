@@ -265,7 +265,10 @@ fn test_lithium_breeds_tritium() {
             energy: NeutronEnergy::Thermal,
         });
         sim.tick();
-        if sim.grid.get(5, 5).map(|p| p.element_id) == Some(TRITIUM) {
+        let found = (4..=6).any(|y| {
+            (4..=6).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(TRITIUM))
+        });
+        if found {
             bred = true;
             break;
         }
@@ -280,6 +283,10 @@ fn test_gases_are_classified_as_gas() {
     assert_eq!(kind_for_id(TRITIUM), ElementKind::Gas);
     assert_eq!(kind_for_id(DEUTERIUM), ElementKind::Gas);
     assert!(is_gas(HELIUM));
+    assert!(is_gas(STEAM));
+    assert!(is_static_solid(CONCRETE));
+    assert!(is_powder(SAND));
+    assert!(is_powder(U235));
 }
 
 #[test]
@@ -374,4 +381,103 @@ fn test_chunk_pool_active_tracking() {
 
     let active = pool.active_chunks();
     assert!(active.contains(&(0, 0)));
+}
+
+#[test]
+fn test_static_solids_do_not_fall() {
+    let mut sim = SimulationState::new(8, 8, 0);
+    sim.grid.set(3, 1, Particle::new(CONCRETE, 293));
+    sim.grid.set(4, 1, Particle::new(STEEL, 293));
+    for _ in 0..20 {
+        sim.tick();
+    }
+    assert_eq!(sim.grid.get(3, 1).unwrap().element_id, CONCRETE);
+    assert_eq!(sim.grid.get(4, 1).unwrap().element_id, STEEL);
+}
+
+#[test]
+fn test_sand_piles_instead_of_flowing_sideways() {
+    let mut sim = SimulationState::new(21, 12, 1);
+    for x in 0..21 {
+        sim.grid.set(x, 11, Particle::new(STONE, 293));
+    }
+    // A 3-wide tower of sand on a flat floor.
+    for y in 6..11 {
+        for x in 9..12 {
+            sim.grid.set(x, y, Particle::new(SAND, 293));
+        }
+    }
+    for _ in 0..80 {
+        sim.tick();
+    }
+    let far = (0..21)
+        .filter(|&x| x <= 3 || x >= 17)
+        .filter(|&x| sim.grid.get(x, 10).map(|p| p.element_id) == Some(SAND))
+        .count();
+    assert_eq!(far, 0, "sand should not run out like a liquid");
+}
+
+#[test]
+fn test_water_finds_a_level() {
+    let mut sim = SimulationState::new(24, 10, 2);
+    for x in 0..24 {
+        sim.grid.set(x, 9, Particle::new(STONE, 293));
+    }
+    for y in 4..9 {
+        for x in 2..6 {
+            sim.grid.set(x, y, Particle::new(WATER, 293));
+        }
+    }
+    for _ in 0..200 {
+        sim.tick();
+    }
+    let cols_with_water = (0..24)
+        .filter(|&x| (0..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(WATER)))
+        .count();
+    assert!(
+        cols_with_water >= 8,
+        "water should spread across the basin, cols={cols_with_water}"
+    );
+}
+
+#[test]
+fn test_water_boils_to_steam_then_can_condense() {
+    let mut sim = SimulationState::new(12, 12, 3);
+    sim.grid.set(6, 10, Particle::new(STONE, 293));
+    sim.grid.set(6, 9, Particle::new(WATER, 420));
+    let mut saw_steam = false;
+    for _ in 0..40 {
+        sim.tick();
+        saw_steam |= (0..12).any(|y| {
+            (0..12).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(STEAM))
+        });
+    }
+    assert!(saw_steam, "hot water should boil into steam");
+}
+
+#[test]
+fn test_dense_powder_sinks_through_water() {
+    let mut sim = SimulationState::new(9, 12, 4);
+    for x in 0..9 {
+        sim.grid.set(x, 11, Particle::new(STONE, 293));
+    }
+    for y in 6..11 {
+        for x in 2..7 {
+            sim.grid.set(x, y, Particle::new(WATER, 293));
+        }
+    }
+    sim.grid.set(4, 5, Particle::new(LEAD, 293)); // static, should stay
+    sim.grid.set(4, 6, Particle::new(U235, 293));
+    for _ in 0..80 {
+        sim.tick();
+    }
+    // Uranium powder should have settled near the floor, not stayed on top of the pool.
+    let u_y = (0..12)
+        .flat_map(|y| (0..9).map(move |x| (x, y)))
+        .filter(|&(x, y)| sim.grid.get(x, y).map(|p| p.element_id) == Some(U235))
+        .map(|(_, y)| y)
+        .max()
+        .unwrap_or(0);
+    assert!(u_y >= 9, "U-235 should sink through water, y={u_y}");
+    assert_eq!(sim.grid.get(4, 5).unwrap().element_id, LEAD);
 }

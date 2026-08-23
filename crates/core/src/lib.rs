@@ -5,6 +5,7 @@ pub mod chunk;
 pub mod element_id;
 pub mod grid;
 pub mod particle;
+pub mod physics;
 pub mod reactions;
 pub mod simulation;
 

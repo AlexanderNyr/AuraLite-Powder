@@ -7,6 +7,9 @@ description = "WASM entry for AuraLite"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [features]
 default = ["web"]
 web = ["aura-lite-web/web", "dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]

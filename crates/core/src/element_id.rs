@@ -29,6 +29,8 @@ pub const HELIUM: u16 = 25;
 pub const MOLTEN_FUEL: u16 = 26;
 pub const FALLOUT: u16 = 27;
 pub const BORON: u16 = 28; // neutron absorber
+pub const STEAM: u16 = 29;
+pub const ICE: u16 = 30;
 
 pub const MAX_ELEMENT_ID: u16 = 31;
 
@@ -56,9 +58,9 @@ pub fn kind_for_id(id: u16) -> ElementKind {
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON => ElementKind::Solid,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
         | TNT => ElementKind::Solid,
-        TRITIUM | DEUTERIUM | HELIUM => ElementKind::Gas,
+        TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM => ElementKind::Gas,
         MOLTEN_FUEL => ElementKind::Molten,
-        HYDROGEN => ElementKind::Gas,
+        ICE => ElementKind::Solid,
         NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA => ElementKind::Radiation,
         _ => ElementKind::Air,
     }
@@ -90,6 +92,8 @@ pub fn density_for_id(id: u16) -> f32 {
         HELIUM => 0.1,
         MOLTEN_FUEL => 10.0,
         FALLOUT => 2.0,
+        STEAM => 0.05,
+        ICE => 0.92,
         NEUTRON_THERMAL => 0.001,
         NEUTRON_FAST => 0.001,
         GAMMA => 0.0,
@@ -116,7 +120,82 @@ pub fn is_liquid(id: u16) -> bool {
 }
 
 pub fn is_gas(id: u16) -> bool {
-    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM)
+    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM)
+}
+
+/// Immovable structural material (walls, shielding, ice).
+pub fn is_static_solid(id: u16) -> bool {
+    matches!(id, STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE)
+}
+
+/// Granular material that piles with an angle of repose.
+pub fn is_powder(id: u16) -> bool {
+    matches!(
+        id,
+        SAND | FALLOUT
+            | FISSION_PRODUCTS
+            | LITHIUM
+            | TNT
+            | U235
+            | U238
+            | PU239
+            | PU240
+            | DEPLETED_URANIUM
+    )
+}
+
+pub fn is_fluid(id: u16) -> bool {
+    is_liquid(id) || is_gas(id)
+}
+
+/// How many extra horizontal cells a liquid may travel in one tick (low = viscous).
+pub fn flow_steps(id: u16) -> u32 {
+    match id {
+        WATER => 4,
+        HEAVY_WATER => 3,
+        MOLTEN_FUEL => 1,
+        STEAM | HYDROGEN | HELIUM => 3,
+        TRITIUM | DEUTERIUM => 2,
+        _ => 0,
+    }
+}
+
+/// Probability a powder slides down a diagonal this tick (angle of repose).
+pub fn repose_slide(id: u16) -> f32 {
+    match id {
+        SAND | FALLOUT => 0.62,
+        FISSION_PRODUCTS | LITHIUM | TNT => 0.45,
+        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM => 0.28,
+        _ => 0.4,
+    }
+}
+
+/// Thermal conductivity used by the heat solver (0..1).
+pub fn conductivity(id: u16) -> f32 {
+    match id {
+        AIR => 0.015,
+        STEAM | HYDROGEN | HELIUM | TRITIUM | DEUTERIUM => 0.03,
+        WATER | HEAVY_WATER => 0.14,
+        ICE => 0.18,
+        SAND | FALLOUT | FISSION_PRODUCTS => 0.06,
+        CONCRETE | STONE | GRAPHITE => 0.10,
+        BORON | LITHIUM | TNT => 0.08,
+        STEEL => 0.42,
+        LEAD => 0.30,
+        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | MOLTEN_FUEL => 0.16,
+        _ => 0.05,
+    }
+}
+
+/// Terminal fall speed in cells / tick.
+pub fn max_fall_speed(id: u16) -> i8 {
+    match id {
+        WATER | HEAVY_WATER => 2,
+        MOLTEN_FUEL => 2,
+        SAND | FALLOUT | FISSION_PRODUCTS | TNT | LITHIUM => 3,
+        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM => 3,
+        _ => 1,
+    }
 }
 
 pub fn penetration_depth(id: u16) -> u32 {

@@ -2,6 +2,7 @@ use crate::chunk::{ChunkPool, CHUNK_SIZE};
 use crate::element_id::*;
 use crate::grid::{Grid, GridSnapshot};
 use crate::particle::Particle;
+use crate::physics::{self, VelocityField};
 use crate::reactions::{self, NeutronEnergy};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,8 @@ pub struct SimulationState {
     pub k_effective: f32,
     #[serde(skip, default)]
     pub chunk_pool: ChunkPool,
+    #[serde(skip, default)]
+    pub velocities: VelocityField,
 }
 
 impl SimulationState {
@@ -68,12 +71,14 @@ impl SimulationState {
             decay_count: 0,
             k_effective: 0.0,
             chunk_pool: ChunkPool::new(width, height),
+            velocities: VelocityField::new((width * height) as usize),
         }
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
         self.grid.resize(w, h);
         self.chunk_pool = ChunkPool::new(w, h);
+        self.velocities = VelocityField::new((w * h) as usize);
     }
 
     /// Prefill a small graphite-moderated U-235 pile plus a D+T fusion sample.
@@ -353,40 +358,9 @@ impl SimulationState {
         let total = (w * h) as usize;
         let diff_rate = self.settings.temperature_diffusion_rate;
 
-        let new_temps: Vec<u16> = (0..total)
-            .into_par_iter()
-            .map(|idx| {
-                let x = (idx as u32) % w;
-                let y = (idx as u32) / w;
-                let cur_temp = self.grid.particles[idx].temperature as f32;
-                let mut sum = cur_temp;
-                let mut count = 1.0_f32;
-                for dy in -1..=1_i32 {
-                    for dx in -1..=1_i32 {
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let nx = x as i32 + dx;
-                        let ny = y as i32 + dy;
-                        if nx < 0 || ny < 0 || nx as u32 >= w || ny as u32 >= h {
-                            continue;
-                        }
-                        let nidx = (ny as u32 * w + nx as u32) as usize;
-                        sum += self.grid.particles[nidx].temperature as f32;
-                        count += 1.0;
-                    }
-                }
-                let avg = sum / count;
-                let diffused = cur_temp + (avg - cur_temp) * diff_rate;
-                let cooled = diffused * 0.999 + reactions::AMBIENT_TEMP as f32 * 0.001;
-                cooled.clamp(0.0, 5000.0) as u16
-            })
-            .collect();
-
-        for (i, temp) in new_temps.into_iter().enumerate() {
-            self.grid.particles[i].temperature = temp;
-        }
-
+        let _ = (w, h, total);
+        physics::diffuse_heat(&mut self.grid, diff_rate);
+        physics::apply_phase_changes(&mut self.grid, rng);
         self.apply_thermal_effects(rng);
     }
 
@@ -419,9 +393,10 @@ impl SimulationState {
                     }
                 }
                 if p.temperature > reactions::BOIL_TEMP
-                    && matches!(p.element_id, WATER | HEAVY_WATER)
+                    && matches!(p.element_id, WATER | HEAVY_WATER | STEAM)
                     && rng.f32() < reactions::BOIL_PROB
                 {
+                    // Thermolysis of already-superheated water / steam.
                     self.grid.set(x, y, Particle::new(HYDROGEN, p.temperature));
                 }
                 if p.element_id == TNT && p.temperature > reactions::TNT_IGNITE_TEMP {
@@ -518,226 +493,7 @@ impl SimulationState {
         if !self.settings.gravity_enabled {
             return;
         }
-        for p in &mut self.grid.particles {
-            p.clear_flag(Particle::FLAG_MOVED);
-            p.clear_flag(Particle::FLAG_REACTED);
-        }
-        let w = self.grid.width as i32;
-        let h = self.grid.height as i32;
-
-        for y in (0..h - 1).rev() {
-            let mut xs: Vec<i32> = (0..w).collect();
-            if rng.bool() {
-                xs.reverse();
-            } else {
-                for i in 0..xs.len() {
-                    let j = rng.usize(0..xs.len());
-                    xs.swap(i, j);
-                }
-            }
-            for x in xs {
-                self.apply_gravity_at(x as u32, y as u32, rng);
-            }
-        }
-
-        for y in 1..h {
-            for x in 0..w {
-                let id = if let Some(p) = self.grid.get(x as u32, y as u32) {
-                    p.element_id
-                } else {
-                    continue;
-                };
-                if is_gas(id) && y > 0 {
-                    let above_empty = self
-                        .grid
-                        .get(x as u32, (y - 1) as u32)
-                        .is_some_and(|p| p.is_empty());
-                    if above_empty && rng.f32() < 0.5 {
-                        let p = *self.grid.get(x as u32, y as u32).unwrap();
-                        self.grid.set(x as u32, (y - 1) as u32, p);
-                        self.grid.set(x as u32, y as u32, Particle::air());
-                    } else {
-                        let dir = if rng.bool() { -1 } else { 1 };
-                        let nx = x + dir;
-                        if self.grid.in_bounds(nx, y)
-                            && self
-                                .grid
-                                .get(nx as u32, y as u32)
-                                .is_some_and(|p| p.is_empty())
-                        {
-                            let p = *self.grid.get(x as u32, y as u32).unwrap();
-                            self.grid.set(nx as u32, y as u32, p);
-                            self.grid.set(x as u32, y as u32, Particle::air());
-                        }
-                    }
-                }
-                if is_radiation(id) {
-                    self.apply_radiation_movement(x as u32, y as u32, rng);
-                }
-            }
-        }
-    }
-
-    fn apply_gravity_at(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
-        let w = self.grid.width;
-        let h = self.grid.height;
-        if x >= w || y >= h {
-            return;
-        }
-        let cur = *self.grid.get(x, y).unwrap();
-        if cur.is_empty() || cur.has_flag(Particle::FLAG_MOVED) {
-            return;
-        }
-        let cur_kind = kind_for_id(cur.element_id);
-        if is_radiation(cur.element_id) || is_gas(cur.element_id) {
-            return;
-        }
-        let below_y = y + 1;
-        if below_y >= h {
-            return;
-        }
-        let below = *self.grid.get(x, below_y).unwrap();
-        if below.is_empty() {
-            let mut moved = cur;
-            moved.set_flag(Particle::FLAG_MOVED);
-            self.grid.set(x, below_y, moved);
-            self.grid.set(x, y, Particle::air());
-            return;
-        }
-        let cur_dens = density_for_id(cur.element_id);
-        let below_dens = density_for_id(below.element_id);
-        let can_swap = (cur_dens > below_dens + 0.1 && is_liquid(below.element_id))
-            || (cur_dens > below_dens + 1.0 && below.element_id == AIR)
-            || (cur_dens > below_dens && is_gas(below.element_id))
-            || (is_liquid(cur.element_id) && is_liquid(below.element_id) && cur_dens > below_dens);
-
-        if can_swap && rng.f32() < 0.9 {
-            let mut moved = cur;
-            moved.set_flag(Particle::FLAG_MOVED);
-            let mut swapped = below;
-            swapped.set_flag(Particle::FLAG_MOVED);
-            self.grid.set(x, below_y, moved);
-            self.grid.set(x, y, swapped);
-            return;
-        }
-
-        if cur_kind == ElementKind::Sand
-            || cur_kind == ElementKind::Liquid
-            || cur_kind == ElementKind::Solid
-        {
-            let dirs = if rng.bool() { [-1, 1] } else { [1, -1] };
-            for dx in dirs {
-                let nx = x as i32 + dx;
-                if nx < 0 || nx >= w as i32 {
-                    continue;
-                }
-                let nx_u = nx as u32;
-                if let Some(diag) = self.grid.get(nx_u, below_y).copied() {
-                    if diag.is_empty() {
-                        let mut moved = cur;
-                        moved.set_flag(Particle::FLAG_MOVED);
-                        self.grid.set(nx_u, below_y, moved);
-                        self.grid.set(x, y, Particle::air());
-                        return;
-                    }
-                    let diag_dens = density_for_id(diag.element_id);
-                    if cur_dens > diag_dens + 0.5
-                        && (is_liquid(diag.element_id) || is_gas(diag.element_id))
-                    {
-                        let mut moved = cur;
-                        moved.set_flag(Particle::FLAG_MOVED);
-                        let mut swapped = diag;
-                        swapped.set_flag(Particle::FLAG_MOVED);
-                        self.grid.set(nx_u, below_y, moved);
-                        self.grid.set(x, y, swapped);
-                        return;
-                    }
-                }
-            }
-            if is_liquid(cur.element_id) || cur_kind == ElementKind::Sand {
-                let dirs = if rng.bool() { [-1, 1] } else { [1, -1] };
-                for dx in dirs {
-                    let nx = x as i32 + dx;
-                    if nx < 0 || nx >= w as i32 {
-                        continue;
-                    }
-                    let nx_u = nx as u32;
-                    if self.grid.get(nx_u, y).is_some_and(|p| p.is_empty()) {
-                        let mut moved = cur;
-                        moved.set_flag(Particle::FLAG_MOVED);
-                        self.grid.set(nx_u, y, moved);
-                        self.grid.set(x, y, Particle::air());
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    fn apply_radiation_movement(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
-        let p = *self.grid.get(x, y).unwrap();
-        let id = p.element_id;
-        if !is_radiation(id) {
-            return;
-        }
-        let mut new_p = p;
-        new_p.lifetime = new_p.lifetime.wrapping_add(1);
-        let max_lt = match id {
-            NEUTRON_THERMAL => 30,
-            NEUTRON_FAST => 40,
-            GAMMA => 20,
-            ALPHA => 8,
-            BETA => 12,
-            _ => 10,
-        };
-        if new_p.lifetime > max_lt {
-            self.grid.set(x, y, Particle::air());
-            return;
-        }
-        *self.grid.get_mut(x, y).unwrap() = new_p;
-
-        let moves = match id {
-            NEUTRON_FAST => 2,
-            NEUTRON_THERMAL => 1,
-            GAMMA => 3,
-            _ => 1,
-        };
-        let mut cx = x as i32;
-        let mut cy = y as i32;
-        for _ in 0..moves {
-            let dx = rng.i32(-1..=1);
-            let dy = rng.i32(-1..=1);
-            let nx = cx + dx;
-            let ny = cy + dy;
-            if !self.grid.in_bounds(nx, ny) {
-                self.grid.set(cx as u32, cy as u32, Particle::air());
-                return;
-            }
-            let target = *self.grid.get(nx as u32, ny as u32).unwrap();
-            if target.is_empty() {
-                let cur = *self.grid.get(cx as u32, cy as u32).unwrap();
-                self.grid.set(nx as u32, ny as u32, cur);
-                self.grid.set(cx as u32, cy as u32, Particle::air());
-                cx = nx;
-                cy = ny;
-            } else {
-                let pen = penetration_depth(id);
-                if pen > 0 && rng.u32(0..pen + 1) > 0 {
-                    if let Some(tgt) = self.grid.get_mut(nx as u32, ny as u32) {
-                        tgt.temperature = tgt.temperature.saturating_add(match id {
-                            GAMMA => 5,
-                            NEUTRON_FAST => 15,
-                            NEUTRON_THERMAL => 8,
-                            _ => 2,
-                        });
-                    }
-                    if id == GAMMA && rng.f32() < 0.7 {
-                        continue;
-                    }
-                }
-                break;
-            }
-        }
+        physics::step(&mut self.grid, &mut self.velocities, rng);
     }
 
     fn reaction_pass(&mut self, rng: &mut fastrand::Rng) {
@@ -808,42 +564,8 @@ impl SimulationState {
     }
 
     fn effects_pass(&mut self, rng: &mut fastrand::Rng) {
-        let w = self.grid.width;
-        let h = self.grid.height;
-        let mut new_temps = vec![0u16; (w * h) as usize];
-        for y in 0..h {
-            for x in 0..w {
-                let idx = self.grid.index(x, y);
-                let cur_temp = self.grid.particles[idx].temperature as f32;
-                let mut sum = cur_temp;
-                let mut count = 1.0;
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        if dx == 0 && dy == 0 {
-                            continue;
-                        }
-                        let nx = x as i32 + dx;
-                        let ny = y as i32 + dy;
-                        if !self.grid.in_bounds(nx, ny) {
-                            continue;
-                        }
-                        let nidx = self.grid.index(nx as u32, ny as u32);
-                        let ntemp = self.grid.particles[nidx].temperature as f32;
-                        sum += ntemp;
-                        count += 1.0;
-                    }
-                }
-                let avg = sum / count;
-                let diffused =
-                    cur_temp + (avg - cur_temp) * self.settings.temperature_diffusion_rate;
-                let cooled = diffused * 0.999 + reactions::AMBIENT_TEMP as f32 * 0.001;
-                new_temps[idx] = cooled.clamp(0.0, 5000.0) as u16;
-            }
-        }
-        for (i, temp) in new_temps.into_iter().enumerate() {
-            self.grid.particles[i].temperature = temp;
-        }
-
+        physics::diffuse_heat(&mut self.grid, self.settings.temperature_diffusion_rate);
+        physics::apply_phase_changes(&mut self.grid, rng);
         self.apply_thermal_effects(rng);
     }
 
