@@ -1,35 +1,24 @@
-//! Nuclear physics mechanics: fission, fusion, decay, criticality
+//! Nuclear physics helpers. Runtime values live in `aura_lite_core::reactions`
+//! so the simulation and this crate cannot drift apart.
 
 use aura_lite_core::element_id::*;
+use aura_lite_core::reactions;
 
 /// Fission mechanics
 pub mod fission {
     use super::*;
 
     pub fn fission_products(rng: &mut fastrand::Rng) -> Vec<u16> {
-        // simplified: always fission products, but could be varied
         let _ = rng;
         vec![FISSION_PRODUCTS]
     }
 
     pub fn energy_released(element: u16) -> f32 {
-        match element {
-            U235 => 202.5, // MeV, scaled
-            U238 => 205.0,
-            PU239 => 207.0,
-            PU240 => 200.0,
-            _ => 0.0,
-        }
+        reactions::energy_released_mev(element)
     }
 
     pub fn neutron_count(element: u16, rng: &mut fastrand::Rng) -> u32 {
-        match element {
-            U235 => rng.u32(2..=3),
-            PU239 => rng.u32(2..=4),
-            U238 => rng.u32(2..=3),
-            PU240 => rng.u32(2..=3),
-            _ => rng.u32(2..=3),
-        }
+        reactions::neutron_count(element, rng)
     }
 }
 
@@ -37,7 +26,7 @@ pub mod fission {
 pub mod fusion {
     use super::*;
 
-    pub const FUSION_THRESHOLD: u16 = 1500;
+    pub const FUSION_THRESHOLD: u16 = reactions::FUSION_THRESHOLD;
 
     pub fn can_fuse(a: u16, b: u16, temp: u16) -> bool {
         if temp < FUSION_THRESHOLD {
@@ -66,54 +55,48 @@ pub mod decay {
         vec![
             DecayStep {
                 parent: U238,
-                daughter: DEPLETED_URANIUM,
-                radiation: ALPHA,
-                half_life_ticks: 2_000_000,
+                daughter: reactions::decay_daughter(U238),
+                radiation: reactions::decay_radiation(U238),
+                half_life_ticks: reactions::half_life_ticks(U238),
             },
             DecayStep {
                 parent: U235,
-                daughter: FISSION_PRODUCTS,
-                radiation: ALPHA,
-                half_life_ticks: 1_000_000,
+                daughter: reactions::decay_daughter(U235),
+                radiation: reactions::decay_radiation(U235),
+                half_life_ticks: reactions::half_life_ticks(U235),
             },
             DecayStep {
                 parent: PU239,
-                daughter: U235,
-                radiation: ALPHA,
-                half_life_ticks: 500_000,
+                daughter: reactions::decay_daughter(PU239),
+                radiation: reactions::decay_radiation(PU239),
+                half_life_ticks: reactions::half_life_ticks(PU239),
             },
             DecayStep {
                 parent: PU240,
-                daughter: PU239,
-                radiation: ALPHA,
-                half_life_ticks: 400_000,
+                daughter: reactions::decay_daughter(PU240),
+                radiation: reactions::decay_radiation(PU240),
+                half_life_ticks: reactions::half_life_ticks(PU240),
             },
             DecayStep {
                 parent: TRITIUM,
-                daughter: HELIUM,
-                radiation: BETA,
-                half_life_ticks: 100_000,
+                daughter: reactions::decay_daughter(TRITIUM),
+                radiation: reactions::decay_radiation(TRITIUM),
+                half_life_ticks: reactions::half_life_ticks(TRITIUM),
             },
         ]
     }
 
     pub fn daughter_for(parent: u16) -> u16 {
-        match parent {
-            U238 => DEPLETED_URANIUM,
-            U235 => FISSION_PRODUCTS,
-            PU239 => U235,
-            PU240 => PU239,
-            TRITIUM => HELIUM,
-            _ => FALLOUT,
-        }
+        reactions::decay_daughter(parent)
     }
 }
 
 /// Criticality calculations
 pub mod criticality {
+    use super::*;
 
     pub fn is_critical(mass_count: u32, threshold: u32) -> bool {
-        mass_count >= threshold
+        reactions::is_critical(mass_count, threshold)
     }
 
     pub fn criticality_factor(
@@ -121,12 +104,6 @@ pub mod criticality {
         moderator_count: u32,
         absorber_count: u32,
     ) -> f32 {
-        // simplified k-effective
-        let production = fissile_count as f32 * 2.5;
-        let moderation = (moderator_count as f32 * 0.3).min(1.5);
-        let absorption = absorber_count as f32 * 0.8;
-        let escape = 0.2; // geometric loss
-        let k = (production * (1.0 + moderation)) / (1.0 + absorption + escape);
-        k / 100.0 // scaled
+        reactions::criticality_factor(fissile_count, moderator_count, absorber_count)
     }
 }

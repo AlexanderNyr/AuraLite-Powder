@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "AuraLite Powder - Cross-Platform Falling-Sand Simulation with Advanced Nuclear Physics"
 authors = ["AuraLite Team"]
-license = "MIT"
+license = "Apache-2.0"
 default-run = "aura_lite"
 
 [workspace]
@@ -30,6 +30,7 @@ softbuffer-renderer = [
 wgpu-renderer = [
     "aura-lite-renderer/wgpu",
     "dep:wgpu",
+    "dep:winit",
     "dep:pixels",
 ]
 native-ui = [
@@ -55,11 +56,11 @@ compression = [
 [dependencies]
 aura-lite-core = { path = "crates/core" }
 aura-lite-elements = { path = "crates/elements" }
-aura-lite-renderer = { path = "crates/renderer" }
-aura-lite-ui = { path = "crates/ui" }
+aura-lite-renderer = { path = "crates/renderer", default-features = false }
+aura-lite-ui = { path = "crates/ui", default-features = false }
 aura-lite-io = { path = "crates/io" }
 aura-lite-utils = { path = "crates/utils" }
-aura-lite-web = { path = "crates/web", optional = true }
+aura-lite-web = { path = "crates/web", optional = true, default-features = false }
 
 pixels = { version = "0.15", optional = true }
 winit = { version = "0.29", optional = true }

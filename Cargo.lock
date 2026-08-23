@@ -467,6 +467,7 @@ dependencies = [
  "image",
  "log",
  "pixels",
+ "pollster 0.3.0",
  "serde",
  "softbuffer",
  "wgpu 0.20.1",

@@ -48,13 +48,14 @@ impl ReactionTable {
     pub fn build_default() -> Self {
         let mut table = Self::new();
         use aura_lite_core::element_id::*;
+        use aura_lite_core::reactions::{self, NeutronEnergy};
 
         // Fission reactions
         table.insert(
             U235,
             NEUTRON_THERMAL,
             ReactionOutcome {
-                probability: 0.85,
+                probability: reactions::fission_base_probability(U235, NeutronEnergy::Thermal),
                 products: vec![FISSION_PRODUCTS],
                 energy_change: 200.0,
                 particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, GAMMA],
@@ -65,7 +66,7 @@ impl ReactionTable {
             U235,
             NEUTRON_FAST,
             ReactionOutcome {
-                probability: 0.35,
+                probability: reactions::fission_base_probability(U235, NeutronEnergy::Fast),
                 products: vec![FISSION_PRODUCTS],
                 energy_change: 200.0,
                 particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
@@ -76,7 +77,7 @@ impl ReactionTable {
             PU239,
             NEUTRON_THERMAL,
             ReactionOutcome {
-                probability: 0.90,
+                probability: reactions::fission_base_probability(PU239, NeutronEnergy::Thermal),
                 products: vec![FISSION_PRODUCTS],
                 energy_change: 210.0,
                 particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST, NEUTRON_FAST],
@@ -87,7 +88,7 @@ impl ReactionTable {
             PU239,
             NEUTRON_FAST,
             ReactionOutcome {
-                probability: 0.40,
+                probability: reactions::fission_base_probability(PU239, NeutronEnergy::Fast),
                 products: vec![FISSION_PRODUCTS],
                 energy_change: 210.0,
                 particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
@@ -98,7 +99,7 @@ impl ReactionTable {
             U238,
             NEUTRON_FAST,
             ReactionOutcome {
-                probability: 0.25,
+                probability: reactions::fission_base_probability(U238, NeutronEnergy::Fast),
                 products: vec![FISSION_PRODUCTS],
                 energy_change: 190.0,
                 particle_spawns: vec![NEUTRON_FAST, NEUTRON_FAST],
@@ -111,7 +112,7 @@ impl ReactionTable {
             DEUTERIUM,
             TRITIUM,
             ReactionOutcome {
-                probability: 0.05, // requires high temp check elsewhere
+                probability: reactions::FUSION_PROBABILITY, // requires high temp check elsewhere
                 products: vec![HELIUM],
                 energy_change: 500.0,
                 particle_spawns: vec![NEUTRON_FAST],
@@ -124,7 +125,7 @@ impl ReactionTable {
             NEUTRON_FAST,
             WATER,
             ReactionOutcome {
-                probability: 0.4,
+                probability: reactions::moderator_thermalize_chance(WATER),
                 products: vec![WATER],
                 energy_change: -5.0,
                 particle_spawns: vec![NEUTRON_THERMAL],
@@ -135,7 +136,7 @@ impl ReactionTable {
             NEUTRON_FAST,
             HEAVY_WATER,
             ReactionOutcome {
-                probability: 0.5,
+                probability: reactions::moderator_thermalize_chance(HEAVY_WATER),
                 products: vec![HEAVY_WATER],
                 energy_change: -3.0,
                 particle_spawns: vec![NEUTRON_THERMAL],
@@ -146,7 +147,7 @@ impl ReactionTable {
             NEUTRON_FAST,
             GRAPHITE,
             ReactionOutcome {
-                probability: 0.3,
+                probability: reactions::moderator_thermalize_chance(GRAPHITE),
                 products: vec![GRAPHITE],
                 energy_change: -4.0,
                 particle_spawns: vec![NEUTRON_THERMAL],
@@ -170,10 +171,34 @@ impl ReactionTable {
             BORON,
             NEUTRON_FAST,
             ReactionOutcome {
-                probability: 0.6,
+                probability: reactions::absorber_chance(BORON, NeutronEnergy::Fast),
                 products: vec![FALLOUT],
                 energy_change: 2.0,
                 particle_spawns: vec![ALPHA],
+                temperature_delta: 50,
+            },
+        );
+
+        // Lithium breeding: Li + n -> T + He
+        table.insert(
+            LITHIUM,
+            NEUTRON_THERMAL,
+            ReactionOutcome {
+                probability: reactions::LITHIUM_BREED_CHANCE,
+                products: vec![TRITIUM],
+                energy_change: 4.8,
+                particle_spawns: vec![HELIUM],
+                temperature_delta: 50,
+            },
+        );
+        table.insert(
+            LITHIUM,
+            NEUTRON_FAST,
+            ReactionOutcome {
+                probability: reactions::LITHIUM_BREED_CHANCE,
+                products: vec![TRITIUM],
+                energy_change: 4.8,
+                particle_spawns: vec![HELIUM],
                 temperature_delta: 50,
             },
         );

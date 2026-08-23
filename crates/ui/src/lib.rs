@@ -12,4 +12,6 @@ pub use components::app_state::{
 };
 
 #[cfg(feature = "native-ui")]
+pub mod egui_raster;
+#[cfg(feature = "native-ui")]
 pub mod egui_ui;

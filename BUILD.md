@@ -18,8 +18,8 @@ cargo run --release --features "softbuffer-renderer native-ui"
 This uses:
 
 - `pixels` 0.15
-- `winit` 0.30
-- `softbuffer` 0.6
+- `winit` 0.29
+- `softbuffer` 0.4
 - `egui` 0.28 + `rfd` for dialogs
 
 ## WGPU Backend

@@ -132,7 +132,7 @@ Radiation particles are moving particles (not just static property):
 
 Fission products aggregated as single element "Fission Products" for simplicity. Future extension: mixed isotope waste with variable decay and heat.
 
-Tritium breeding possible via Lithium + neutron -> Tritium + He (not yet implemented but planned).
+Tritium breeding: Lithium + neutron (thermal or fast) converts the cell to Tritium and, if a neighbour is empty, spawns Helium. Probability is `LITHIUM_BREED_CHANCE` (0.40) in `aura_lite_core::reactions`.
 
 ## Validation
 

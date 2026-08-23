@@ -9,6 +9,11 @@ pub struct Particle {
 }
 
 impl Particle {
+    /// Set after a particle moves during the physics pass so it is not stepped twice.
+    pub const FLAG_MOVED: u8 = 1 << 0;
+    /// Set after a reaction consumes this cell so a second reaction cannot fire.
+    pub const FLAG_REACTED: u8 = 1 << 1;
+
     pub const fn new(element_id: u16, temperature: u16) -> Self {
         Self {
             element_id,
@@ -35,6 +40,21 @@ impl Particle {
     pub fn with_lifetime(mut self, lt: u8) -> Self {
         self.lifetime = lt;
         self
+    }
+
+    #[inline]
+    pub fn has_flag(&self, flag: u8) -> bool {
+        self.flags & flag != 0
+    }
+
+    #[inline]
+    pub fn set_flag(&mut self, flag: u8) {
+        self.flags |= flag;
+    }
+
+    #[inline]
+    pub fn clear_flag(&mut self, flag: u8) {
+        self.flags &= !flag;
     }
 }
 

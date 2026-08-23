@@ -3,9 +3,12 @@
     allow(dead_code, unreachable_code)
 )]
 
-use aura_lite_core::{Particle, SimulationState};
-use aura_lite_renderer::{color_for_element, Camera as RendererCamera};
+use aura_lite_core::SimulationState;
+#[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
+use aura_lite_renderer::{render_simulation, Camera as RendererCamera};
+#[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
 use aura_lite_ui::{brush::BrushTool, AppState};
+#[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
 use aura_lite_utils::Vec2;
 
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
@@ -66,22 +69,22 @@ fn run_headless_test() {
     sim.grid.set(
         128,
         100,
-        Particle::new(aura_lite_core::element_id::U235, 400),
+        aura_lite_core::Particle::new(aura_lite_core::element_id::U235, 400),
     );
     sim.grid.set(
         129,
         100,
-        Particle::new(aura_lite_core::element_id::U235, 400),
+        aura_lite_core::Particle::new(aura_lite_core::element_id::U235, 400),
     );
     sim.grid.set(
         130,
         100,
-        Particle::new(aura_lite_core::element_id::U235, 400),
+        aura_lite_core::Particle::new(aura_lite_core::element_id::U235, 400),
     );
     sim.grid.set(
         128,
         101,
-        Particle::new(aura_lite_core::element_id::NEUTRON_THERMAL, 350),
+        aura_lite_core::Particle::new(aura_lite_core::element_id::NEUTRON_THERMAL, 350),
     );
     println!("Initial particles: {}", sim.grid.count_non_empty());
     for i in 0..100 {
@@ -118,12 +121,16 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
     let window_size = window.inner_size();
     let surface_texture =
         SurfaceTexture::new(window_size.width, window_size.height, window.clone());
-    let mut pixels = Pixels::new(GRID_WIDTH, GRID_HEIGHT, surface_texture)?;
+    // Framebuffer matches the window so egui and the camera share the same space.
+    let mut pixels = Pixels::new(window_size.width, window_size.height, surface_texture)?;
 
     let mut app_state = AppState::new(GRID_WIDTH, GRID_HEIGHT);
-    demo_setup(&mut app_state.simulation);
+    app_state.simulation.setup_reactor_demo();
 
     let mut camera = RendererCamera::new(window_size.width as f32, window_size.height as f32);
+    camera.scale = (window_size.width as f32 / GRID_WIDTH as f32)
+        .min(window_size.height as f32 / GRID_HEIGHT as f32)
+        .max(1.0);
     let mut mouse_pos = Vec2::new(0.0, 0.0);
     let mut mouse_down = false;
     let mut right_mouse_down = false;
@@ -148,6 +155,8 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
     );
     #[cfg(feature = "native-ui")]
     let show_egui = true;
+    #[cfg(feature = "native-ui")]
+    let mut egui_textures = aura_lite_ui::egui_raster::EguiTextures::new();
 
     // We need to move window Arc clones into closure, but also keep window for title set inside closure via Arc
     let window_clone = window.clone();
@@ -167,9 +176,11 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 elwt.exit();
             }
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                let _ = pixels.resize_surface(size.width, size.height);
-                let _ = pixels.resize_buffer(GRID_WIDTH, GRID_HEIGHT);
-                camera.resize(size.width as f32, size.height as f32);
+                if size.width > 0 && size.height > 0 {
+                    let _ = pixels.resize_surface(size.width, size.height);
+                    let _ = pixels.resize_buffer(size.width, size.height);
+                    camera.resize(size.width as f32, size.height as f32);
+                }
             }
             Event::WindowEvent { event: WindowEvent::CursorMoved { position, .. }, .. } => {
                 mouse_pos = Vec2::new(position.x as f32, position.y as f32);
@@ -183,7 +194,17 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                     camera.pan(delta);
                 }
                 last_mouse_pos = mouse_pos;
-                if mouse_down {
+                let egui_busy = {
+                    #[cfg(feature = "native-ui")]
+                    {
+                        egui_ctx.wants_pointer_input()
+                    }
+                    #[cfg(not(feature = "native-ui"))]
+                    {
+                        false
+                    }
+                };
+                if mouse_down && !egui_busy {
                     let world = camera.screen_to_world(mouse_pos);
                     let gx = world.x as i32;
                     let gy = world.y as i32;
@@ -193,14 +214,26 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
             Event::WindowEvent { event: WindowEvent::MouseInput { state, button, .. }, .. } => {
                 match (button, state) {
                     (MouseButton::Left, ElementState::Pressed) => {
-                        mouse_down = true;
-                        let world = camera.screen_to_world(mouse_pos);
-                        let gx = world.x as i32;
-                        let gy = world.y as i32;
-                        if matches!(app_state.tools.brush.tool, BrushTool::Line | BrushTool::Rectangle) {
-                            line_start = Some((gx, gy));
-                        } else {
-                            apply_brush(&mut app_state, gx, gy, true);
+                        let egui_busy = {
+                            #[cfg(feature = "native-ui")]
+                            {
+                                egui_ctx.wants_pointer_input()
+                            }
+                            #[cfg(not(feature = "native-ui"))]
+                            {
+                                false
+                            }
+                        };
+                        if !egui_busy {
+                            mouse_down = true;
+                            let world = camera.screen_to_world(mouse_pos);
+                            let gx = world.x as i32;
+                            let gy = world.y as i32;
+                            if matches!(app_state.tools.brush.tool, BrushTool::Line | BrushTool::Rectangle) {
+                                line_start = Some((gx, gy));
+                            } else {
+                                apply_brush(&mut app_state, gx, gy, true);
+                            }
                         }
                     }
                     (MouseButton::Left, ElementState::Released) => {
@@ -255,10 +288,25 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                         }
                         winit::keyboard::Key::Character(c) if c == "s" || c == "S" => {
                             let path = std::env::temp_dir().join("auralite_quick.aura");
-                            if let Err(e) = aura_lite_io::save_to_file(&path, &app_state.simulation.grid, &app_state.simulation.settings, false) {
+                            if let Err(e) = aura_lite_io::save_simulation_to_file(&path, &app_state.simulation, false) {
                                 log::error!("Quick save failed: {}", e);
                             } else {
                                 log::info!("Quick saved to {:?}", path);
+                            }
+                        }
+                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::F12) => {
+                            let sz = window_clone.inner_size();
+                            let frame = pixels.frame();
+                            if let Err(e) = image::save_buffer(
+                                "auralite_screenshot.png",
+                                frame,
+                                sz.width,
+                                sz.height,
+                                image::ColorType::Rgba8,
+                            ) {
+                                log::error!("Screenshot failed: {}", e);
+                            } else {
+                                log::info!("Wrote auralite_screenshot.png");
                             }
                         }
                         winit::keyboard::Key::Character(c) if c == "1" => { app_state.set_selected_element(1); }
@@ -291,11 +339,12 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                     fps_accum = 0;
                     fps_instant = Instant::now();
                     let title = format!(
-                        "AuraLite Powder | FPS: {:.1} | Particles: {} | Fission: {} Fusion: {} | Selected: {} | [1]Sand [2]Water [3]U235 [4]Neutron [5]D [6]T",
+                        "AuraLite Powder | FPS: {:.1} | Particles: {} | Fission: {} Fusion: {} | k-eff: {:.2} | Selected: {} | [1]Sand [2]Water [3]U235 [4]Neutron [5]D [6]T",
                         fps_counter,
                         app_state.info.particle_count,
                         app_state.simulation.fission_count,
                         app_state.simulation.fusion_count,
+                        app_state.simulation.k_effective,
                         aura_lite_elements::registry::name_for_id(app_state.palette.selected_id)
                     );
                     window_clone.set_title(&title);
@@ -303,6 +352,17 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 window_clone.request_redraw();
             }
             Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+                let sz = window_clone.inner_size();
+                {
+                    let frame = pixels.frame_mut();
+                    render_simulation(
+                        &app_state.simulation,
+                        frame,
+                        sz.width,
+                        sz.height,
+                        &camera,
+                    );
+                }
                 #[cfg(feature = "native-ui")]
                 {
                     if show_egui {
@@ -310,13 +370,25 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                         let full_output = egui_ctx.run(raw_input, |ctx| {
                             aura_lite_ui::egui_ui::build_ui(ctx, &mut app_state);
                         });
-                        egui_state.handle_platform_output(window_clone.as_ref(), full_output.platform_output);
+                        egui_textures.apply(&full_output.textures_delta);
+                        let primitives = egui_ctx.tessellate(
+                            full_output.shapes,
+                            full_output.pixels_per_point,
+                        );
+                        aura_lite_ui::egui_raster::rasterize(
+                            pixels.frame_mut(),
+                            sz.width,
+                            sz.height,
+                            full_output.pixels_per_point,
+                            &egui_textures,
+                            &primitives,
+                        );
+                        egui_state.handle_platform_output(
+                            window_clone.as_ref(),
+                            full_output.platform_output,
+                        );
                     }
                 }
-                let frame = pixels.frame_mut();
-                let sz = window_clone.inner_size();
-                render_simulation_to_frame(&app_state.simulation, frame, &camera, (sz.width, sz.height));
-                apply_temperature_overlay(&app_state.simulation, frame);
                 if let Err(e) = pixels.render() {
                     log::error!("pixels render error: {}", e);
                     elwt.exit();
@@ -329,6 +401,7 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
 fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
     match app.tools.brush.tool {
         BrushTool::Brush | BrushTool::Eraser => {
@@ -352,199 +425,27 @@ fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
     }
 }
 
-fn render_simulation_to_frame(
-    sim: &SimulationState,
-    frame: &mut [u8],
-    camera: &RendererCamera,
-    window_size: (u32, u32),
-) {
-    let win_w = window_size.0 as usize;
-    let win_h = window_size.1 as usize;
-    let grid_w = sim.grid.width as usize;
-    let grid_h = sim.grid.height as usize;
-
-    let scale = camera.scale;
-    let offset_x = camera.offset.x;
-    let offset_y = camera.offset.y;
-
-    if (scale - 1.0).abs() < 0.01 && offset_x.abs() < 0.5 && offset_y.abs() < 0.5 {
-        if win_w == grid_w && win_h == grid_h && frame.len() == grid_w * grid_h * 4 {
-            for (i, p) in sim.grid.particles.iter().enumerate() {
-                let col = color_for_element(p.element_id);
-                let base = i * 4;
-                if base + 3 < frame.len() {
-                    frame[base] = col[0];
-                    frame[base + 1] = col[1];
-                    frame[base + 2] = col[2];
-                    frame[base + 3] = 255;
-                    if p.is_empty() {
-                        frame[base] = 10;
-                        frame[base + 1] = 10;
-                        frame[base + 2] = 15;
-                        frame[base + 3] = 255;
-                    }
-                }
-            }
-        } else {
-            for y in 0..win_h {
-                for x in 0..win_w {
-                    let gx = (x as f32 * grid_w as f32 / win_w as f32) as usize;
-                    let gy = (y as f32 * grid_h as f32 / win_h as f32) as usize;
-                    let grid_idx = gy.min(grid_h - 1) * grid_w + gx.min(grid_w - 1);
-                    let p = sim.grid.particles[grid_idx];
-                    let col = color_for_element(p.element_id);
-                    let frame_idx = (y * win_w + x) * 4;
-                    if frame_idx + 3 < frame.len() {
-                        if p.is_empty() {
-                            frame[frame_idx] = 10;
-                            frame[frame_idx + 1] = 10;
-                            frame[frame_idx + 2] = 15;
-                            frame[frame_idx + 3] = 255;
-                        } else {
-                            frame[frame_idx] = col[0];
-                            frame[frame_idx + 1] = col[1];
-                            frame[frame_idx + 2] = col[2];
-                            frame[frame_idx + 3] = 255;
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        for y in 0..win_h {
-            for x in 0..win_w {
-                let screen = Vec2::new(x as f32, y as f32);
-                let world = camera.screen_to_world(screen);
-                let gx = world.x as i32;
-                let gy = world.y as i32;
-                let frame_idx = (y * win_w + x) * 4;
-                if frame_idx + 3 >= frame.len() {
-                    continue;
-                }
-                if gx >= 0 && gy >= 0 && (gx as usize) < grid_w && (gy as usize) < grid_h {
-                    let p = sim.grid.particles[gy as usize * grid_w + gx as usize];
-                    if p.is_empty() {
-                        frame[frame_idx] = 10;
-                        frame[frame_idx + 1] = 10;
-                        frame[frame_idx + 2] = 15;
-                        frame[frame_idx + 3] = 255;
-                    } else {
-                        let col = color_for_element(p.element_id);
-                        frame[frame_idx] = col[0];
-                        frame[frame_idx + 1] = col[1];
-                        frame[frame_idx + 2] = col[2];
-                        frame[frame_idx + 3] = 255;
-                    }
-                } else {
-                    frame[frame_idx] = 5;
-                    frame[frame_idx + 1] = 5;
-                    frame[frame_idx + 2] = 10;
-                    frame[frame_idx + 3] = 255;
-                }
-            }
-        }
-    }
-}
-
-fn apply_temperature_overlay(sim: &SimulationState, frame: &mut [u8]) {
-    if frame.len() != (sim.grid.width * sim.grid.height * 4) as usize {
-        return;
-    }
-    for (i, p) in sim.grid.particles.iter().enumerate() {
-        if p.temperature > 800 && !p.is_empty() {
-            let base = i * 4;
-            let factor = ((p.temperature as f32 - 800.0) / 2000.0).clamp(0.0, 1.0);
-            if base + 2 < frame.len() {
-                frame[base] = frame[base].saturating_add((factor * 200.0) as u8);
-                frame[base + 1] = frame[base + 1].saturating_add((factor * 100.0) as u8);
-            }
-        }
-    }
-}
-
-fn demo_setup(sim: &mut SimulationState) {
-    let w = sim.grid.width;
-    let h = sim.grid.height;
-    for x in 0..w {
-        sim.grid.set(
-            x,
-            h - 2,
-            Particle::new(aura_lite_core::element_id::CONCRETE, 293),
-        );
-        sim.grid.set(
-            x,
-            h - 1,
-            Particle::new(aura_lite_core::element_id::CONCRETE, 293),
-        );
-    }
-    for y in h - 20..h {
-        sim.grid.set(
-            0,
-            y,
-            Particle::new(aura_lite_core::element_id::CONCRETE, 293),
-        );
-        sim.grid.set(
-            w - 1,
-            y,
-            Particle::new(aura_lite_core::element_id::CONCRETE, 293),
-        );
-    }
-    for y in h - 12..h - 5 {
-        for x in w / 2 - 8..w / 2 + 8 {
-            if fastrand::bool() {
-                sim.grid
-                    .set(x, y, Particle::new(aura_lite_core::element_id::U235, 350));
-            }
-        }
-    }
-    for y in h - 15..h - 12 {
-        for x in w / 2 - 10..w / 2 + 10 {
-            sim.grid.set(
-                x,
-                y,
-                Particle::new(aura_lite_core::element_id::GRAPHITE, 300),
-            );
-        }
-    }
-    sim.grid.set(
-        w / 2,
-        h - 14,
-        Particle::new(aura_lite_core::element_id::NEUTRON_THERMAL, 350),
-    );
-    for y in h - 15..h - 2 {
-        sim.grid.set(
-            w / 2 - 12,
-            y,
-            Particle::new(aura_lite_core::element_id::BORON, 293),
-        );
-        sim.grid.set(
-            w / 2 + 12,
-            y,
-            Particle::new(aura_lite_core::element_id::BORON, 293),
-        );
-    }
-    sim.grid.set(
-        30,
-        30,
-        Particle::new(aura_lite_core::element_id::DEUTERIUM, 1600),
-    );
-    sim.grid.set(
-        31,
-        30,
-        Particle::new(aura_lite_core::element_id::TRITIUM, 1600),
-    );
-}
-
 #[cfg(feature = "wgpu-renderer")]
 #[allow(dead_code)]
 fn run_with_wgpu() -> anyhow::Result<()> {
-    println!("WGPU renderer selected - validating shader");
+    use aura_lite_renderer::backend::RenderBackend;
+    use aura_lite_renderer::wgpu_backend::WgpuBackend;
+    println!("WGPU renderer selected - creating device and validating shader");
+    let mut backend = WgpuBackend::init(GRID_WIDTH, GRID_HEIGHT);
     let shader_code = std::fs::read_to_string("assets/shaders/shader.wgsl")
-        .unwrap_or_else(|_| aura_lite_renderer::wgpu_backend::WgpuBackend::load_shader());
-    println!("Loaded shader {} bytes", shader_code.len());
+        .unwrap_or_else(|_| WgpuBackend::load_shader());
+    println!(
+        "Loaded shader {} bytes (validated={})",
+        shader_code.len(),
+        backend.shader_validated()
+    );
+    let mut sim = SimulationState::new(GRID_WIDTH, GRID_HEIGHT, 42);
+    sim.setup_reactor_demo();
+    let pixels = aura_lite_renderer::render_grid_with_glow(&sim);
+    backend.render(&pixels);
     #[cfg(feature = "softbuffer-renderer")]
     {
-        run_with_softbuffer()
+        return run_with_softbuffer();
     }
     #[cfg(not(feature = "softbuffer-renderer"))]
     {

@@ -54,8 +54,9 @@ pub fn kind_for_id(id: u16) -> ElementKind {
         SAND => ElementKind::Sand,
         WATER | HEAVY_WATER => ElementKind::Liquid,
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON => ElementKind::Solid,
-        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | TRITIUM | DEUTERIUM
-        | LITHIUM | HELIUM | FALLOUT | TNT => ElementKind::Solid,
+        U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
+        | TNT => ElementKind::Solid,
+        TRITIUM | DEUTERIUM | HELIUM => ElementKind::Gas,
         MOLTEN_FUEL => ElementKind::Molten,
         HYDROGEN => ElementKind::Gas,
         NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA => ElementKind::Radiation,

@@ -1,0 +1,6 @@
+/target
+/vendor
+**/*.rs.bk
+auralite_screenshot.png
+.idea/
+.vscode/

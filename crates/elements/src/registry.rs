@@ -1,6 +1,7 @@
 use crate::element_trait::ElementDef;
 use aura_lite_core::element_id::*;
 use aura_lite_utils::color::Rgba;
+use std::sync::OnceLock;
 
 // Full registry of elements
 #[allow(clippy::too_many_arguments)]
@@ -275,7 +276,7 @@ pub fn all_definitions() -> Vec<ElementDef> {
         def(
             TRITIUM,
             "Tritium",
-            Rgba::rgb(150, 200, 255),
+            Rgba::new(150, 200, 255, 200),
             0.8,
             293,
             100_000,
@@ -287,7 +288,7 @@ pub fn all_definitions() -> Vec<ElementDef> {
         def(
             DEUTERIUM,
             "Deuterium",
-            Rgba::rgb(120, 220, 255),
+            Rgba::new(120, 220, 255, 200),
             0.8,
             293,
             0,
@@ -311,7 +312,7 @@ pub fn all_definitions() -> Vec<ElementDef> {
         def(
             HYDROGEN,
             "Hydrogen",
-            Rgba::rgb(200, 230, 255),
+            Rgba::new(200, 230, 255, 200),
             0.07,
             293,
             0,
@@ -335,7 +336,7 @@ pub fn all_definitions() -> Vec<ElementDef> {
         def(
             HELIUM,
             "Helium",
-            Rgba::rgb(255, 254, 200),
+            Rgba::new(255, 254, 200, 200),
             0.1,
             293,
             0,
@@ -383,20 +384,33 @@ pub fn all_definitions() -> Vec<ElementDef> {
     ]
 }
 
+fn by_id() -> &'static [Option<ElementDef>] {
+    static BY_ID: OnceLock<Vec<Option<ElementDef>>> = OnceLock::new();
+    BY_ID.get_or_init(|| {
+        let mut slots: Vec<Option<ElementDef>> = vec![None; (MAX_ELEMENT_ID as usize) + 1];
+        for def in all_definitions() {
+            let idx = def.id as usize;
+            if idx < slots.len() {
+                slots[idx] = Some(def);
+            }
+        }
+        slots
+    })
+}
+
+pub fn definition_ref(id: u16) -> Option<&'static ElementDef> {
+    by_id().get(id as usize).and_then(|d| d.as_ref())
+}
+
 pub fn get_definition(id: u16) -> Option<ElementDef> {
-    all_definitions().into_iter().find(|d| d.id == id)
+    definition_ref(id).cloned()
 }
 
 pub fn color_for_id(id: u16) -> [u8; 4] {
-    if let Some(def) = get_definition(id) {
+    if let Some(def) = definition_ref(id) {
         [def.color.r, def.color.g, def.color.b, def.color.a]
     } else {
-        match id {
-            0 => [0, 0, 0, 0],
-            1 => [194, 178, 128, 255],
-            2 => [64, 164, 223, 255],
-            _ => [255, 0, 255, 255],
-        }
+        [255, 0, 255, 255]
     }
 }
 

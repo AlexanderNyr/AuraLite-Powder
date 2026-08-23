@@ -1,4 +1,4 @@
-//! Web crate - thin shim that binds core to a <canvas> element
+//! Web crate - thin shim that binds core to a <canvas> element.
 
 #[cfg(feature = "web")]
 use wasm_bindgen::prelude::*;
@@ -28,15 +28,34 @@ impl WebSimulation {
     }
 
     pub fn set_particle(&mut self, x: u32, y: u32, element_id: u16) {
+        self.set_particle_temp(x, y, element_id, 293);
+    }
+
+    pub fn set_particle_temp(&mut self, x: u32, y: u32, element_id: u16, temperature: u16) {
         if x < self.sim.grid.width && y < self.sim.grid.height {
             self.sim
                 .grid
-                .set(x, y, aura_lite_core::Particle::new(element_id, 293));
+                .set(x, y, aura_lite_core::Particle::new(element_id, temperature));
+        }
+    }
+
+    pub fn paint(&mut self, cx: i32, cy: i32, element_id: u16, radius: u32, temperature: u16) {
+        let r = radius as i32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx * dx + dy * dy > r * r {
+                    continue;
+                }
+                let x = cx + dx;
+                let y = cy + dy;
+                if x >= 0 && y >= 0 {
+                    self.set_particle_temp(x as u32, y as u32, element_id, temperature);
+                }
+            }
         }
     }
 
     pub fn get_rgba_buffer(&self) -> Vec<u8> {
-        // use element colors
         self.sim
             .grid
             .to_rgba_buffer(|id| aura_lite_elements::registry::color_for_id(id))
@@ -50,7 +69,6 @@ impl WebSimulation {
             .dyn_into::<CanvasRenderingContext2d>()?;
 
         let buffer = self.get_rgba_buffer();
-        // web-sys ImageData expects Uint8ClampedArray
         let clamped = wasm_bindgen::Clamped(buffer.as_slice());
         let image_data = ImageData::new_with_u8_clamped_array_and_sh(
             clamped,
@@ -86,6 +104,18 @@ impl WasmSimulation {
         self.inner.set_particle(x, y, element_id);
     }
 
+    pub fn paint(&mut self, x: i32, y: i32, element_id: u16, radius: u32, temperature: u16) {
+        self.inner.paint(x, y, element_id, radius, temperature);
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.sim.grid.clear();
+    }
+
+    pub fn setup_demo(&mut self) {
+        self.inner.sim.setup_reactor_demo();
+    }
+
     pub fn width(&self) -> u32 {
         self.inner.sim.grid.width
     }
@@ -93,10 +123,44 @@ impl WasmSimulation {
     pub fn height(&self) -> u32 {
         self.inner.sim.grid.height
     }
+
+    pub fn particle_count(&self) -> u32 {
+        self.inner.sim.grid.count_non_empty() as u32
+    }
+
+    pub fn fission_count(&self) -> u32 {
+        self.inner.sim.fission_count.min(u32::MAX as u64) as u32
+    }
+
+    pub fn fusion_count(&self) -> u32 {
+        self.inner.sim.fusion_count.min(u32::MAX as u64) as u32
+    }
+
+    pub fn k_effective(&self) -> f32 {
+        self.inner.sim.k_effective
+    }
+
+    #[cfg(feature = "web")]
+    pub fn render(&self, canvas_id: &str) -> Result<(), JsValue> {
+        let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+        let document = window
+            .document()
+            .ok_or_else(|| JsValue::from_str("no document"))?;
+        let canvas = document
+            .get_element_by_id(canvas_id)
+            .ok_or_else(|| JsValue::from_str("canvas not found"))?
+            .dyn_into::<HtmlCanvasElement>()?;
+        canvas.set_width(self.inner.sim.grid.width);
+        canvas.set_height(self.inner.sim.grid.height);
+        self.inner.render_to_canvas(&canvas)
+    }
 }
 
 #[cfg(feature = "web")]
 pub fn start_sim(canvas_id: &str) -> Result<(), JsValue> {
+    let mut sim = WebSimulation::new(256, 256);
+    sim.sim.setup_reactor_demo();
+
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let document = window
         .document()
@@ -105,16 +169,12 @@ pub fn start_sim(canvas_id: &str) -> Result<(), JsValue> {
         .get_element_by_id(canvas_id)
         .ok_or_else(|| JsValue::from_str("canvas not found"))?
         .dyn_into::<HtmlCanvasElement>()?;
-
-    let mut sim = WebSimulation::new(256, 256);
-    // simple demo: place some uranium and neutrons
-    sim.set_particle(100, 100, aura_lite_core::element_id::U235);
-    sim.set_particle(101, 100, aura_lite_core::element_id::U235);
-    sim.set_particle(102, 100, aura_lite_core::element_id::NEUTRON_THERMAL);
-
-    // For simplicity, we do one render, real loop would use requestAnimationFrame
+    canvas.set_width(sim.sim.grid.width);
+    canvas.set_height(sim.sim.grid.height);
     sim.render_to_canvas(&canvas)?;
-    web_sys::console::log_1(&JsValue::from_str("AuraLite WASM simulation started"));
+    web_sys::console::log_1(&JsValue::from_str(
+        "AuraLite WASM simulation started (one frame). Use create_simulation() for a live loop.",
+    ));
 
     Ok(())
 }

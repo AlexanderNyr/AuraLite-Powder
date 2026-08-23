@@ -1,16 +1,11 @@
-use crate::chunk::CHUNK_SIZE;
+use crate::chunk::{ChunkPool, CHUNK_SIZE};
 use crate::element_id::*;
 use crate::grid::{Grid, GridSnapshot};
 use crate::particle::Particle;
+use crate::reactions::{self, NeutronEnergy};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NeutronEnergy {
-    Thermal,
-    Fast,
-}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NeutronEvent {
@@ -34,7 +29,7 @@ impl Default for SimulationSettings {
             temperature_diffusion_rate: 0.08,
             gravity_enabled: true,
             critical_mass_threshold: 8,
-            fusion_threshold: 1500,
+            fusion_threshold: reactions::FUSION_THRESHOLD,
         }
     }
 }
@@ -51,6 +46,11 @@ pub struct SimulationState {
     pub fission_count: u64,
     pub fusion_count: u64,
     pub decay_count: u64,
+    /// Approximate k-effective, refreshed every tick from live cell counts.
+    #[serde(default)]
+    pub k_effective: f32,
+    #[serde(skip, default)]
+    pub chunk_pool: ChunkPool,
 }
 
 impl SimulationState {
@@ -66,15 +66,101 @@ impl SimulationState {
             fission_count: 0,
             fusion_count: 0,
             decay_count: 0,
+            k_effective: 0.0,
+            chunk_pool: ChunkPool::new(width, height),
         }
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
         self.grid.resize(w, h);
+        self.chunk_pool = ChunkPool::new(w, h);
+    }
+
+    /// Prefill a small graphite-moderated U-235 pile plus a D+T fusion sample.
+    pub fn setup_reactor_demo(&mut self) {
+        let w = self.grid.width;
+        let h = self.grid.height;
+        if w < 40 || h < 30 {
+            return;
+        }
+        for x in 0..w {
+            self.grid
+                .set(x, h - 2, Particle::new(CONCRETE, reactions::AMBIENT_TEMP));
+            self.grid
+                .set(x, h - 1, Particle::new(CONCRETE, reactions::AMBIENT_TEMP));
+        }
+        for y in h.saturating_sub(20)..h {
+            self.grid
+                .set(0, y, Particle::new(CONCRETE, reactions::AMBIENT_TEMP));
+            self.grid
+                .set(w - 1, y, Particle::new(CONCRETE, reactions::AMBIENT_TEMP));
+        }
+        for y in h.saturating_sub(12)..h.saturating_sub(5) {
+            for x in w / 2 - 8..w / 2 + 8 {
+                if fastrand::bool() {
+                    self.grid.set(x, y, Particle::new(U235, 350));
+                }
+            }
+        }
+        for y in h.saturating_sub(15)..h.saturating_sub(12) {
+            for x in w / 2 - 10..w / 2 + 10 {
+                self.grid.set(x, y, Particle::new(GRAPHITE, 300));
+            }
+        }
+        self.grid
+            .set(w / 2, h - 14, Particle::new(NEUTRON_THERMAL, 350));
+        for y in h.saturating_sub(15)..h.saturating_sub(2) {
+            self.grid
+                .set(w / 2 - 12, y, Particle::new(BORON, reactions::AMBIENT_TEMP));
+            self.grid
+                .set(w / 2 + 12, y, Particle::new(BORON, reactions::AMBIENT_TEMP));
+        }
+        self.grid.set(30, 30, Particle::new(DEUTERIUM, 1600));
+        self.grid.set(31, 30, Particle::new(TRITIUM, 1600));
+        self.refresh_chunks();
+    }
+
+    fn refresh_chunks(&mut self) {
+        let expected_cx = self.grid.width.div_ceil(CHUNK_SIZE as u32);
+        let expected_cy = self.grid.height.div_ceil(CHUNK_SIZE as u32);
+        if self.chunk_pool.chunks_x != expected_cx || self.chunk_pool.chunks_y != expected_cy {
+            self.chunk_pool = ChunkPool::new(self.grid.width, self.grid.height);
+        }
+        for meta in &mut self.chunk_pool.metas {
+            meta.clear();
+        }
+        let mut fissile = 0u32;
+        let mut moderator = 0u32;
+        let mut absorber = 0u32;
+        let w = self.grid.width;
+        let h = self.grid.height;
+        let cs = CHUNK_SIZE as u32;
+        for y in 0..h {
+            for x in 0..w {
+                let id = self.grid.particles[self.grid.index(x, y)].element_id;
+                if id == AIR {
+                    continue;
+                }
+                if let Some(meta) = self.chunk_pool.get_mut(x / cs, y / cs) {
+                    meta.mark_dirty(x % cs, y % cs);
+                }
+                if is_fissile(id) {
+                    fissile += 1;
+                }
+                if is_moderator(id) {
+                    moderator += 1;
+                }
+                if id == BORON {
+                    absorber += 1;
+                }
+            }
+        }
+        self.k_effective = reactions::criticality_factor(fissile, moderator, absorber);
     }
 
     pub fn tick(&mut self) {
         self.tick += 1;
+        self.refresh_chunks();
         let mut rng = fastrand::Rng::with_seed(self.seed.wrapping_add(self.tick));
         self.process_neutron_queue(&mut rng);
         self.physics_pass(&mut rng);
@@ -99,14 +185,18 @@ impl SimulationState {
 
         let w = self.grid.width;
         let h = self.grid.height;
-        let chunks_x = w.div_ceil(CHUNK_SIZE as u32);
-        let chunks_y = h.div_ceil(CHUNK_SIZE as u32);
-        let _base_seed = self.seed.wrapping_add(self.tick);
+        let active = self.chunk_pool.active_chunks();
+        let chunk_coords: Vec<(u32, u32)> = if active.is_empty() {
+            let chunks_x = w.div_ceil(CHUNK_SIZE as u32);
+            let chunks_y = h.div_ceil(CHUNK_SIZE as u32);
+            (0..chunks_y)
+                .flat_map(|cy| (0..chunks_x).map(move |cx| (cx, cy)))
+                .collect()
+        } else {
+            active
+        };
 
-        // Collect candidates in parallel
-        let chunk_results: Vec<ChunkResult> = (0..chunks_y)
-            .flat_map(|cy| (0..chunks_x).map(move |cx| (cx, cy)))
-            .collect::<Vec<_>>()
+        let chunk_results: Vec<ChunkResult> = chunk_coords
             .par_iter()
             .map(|&(cx, cy)| {
                 let start_x = cx * CHUNK_SIZE as u32;
@@ -143,7 +233,13 @@ impl SimulationState {
                                     if (id == DEUTERIUM && nid == TRITIUM)
                                         || (id == TRITIUM && nid == DEUTERIUM)
                                     {
-                                        fusion.push((x, y, nx as u32, ny as u32));
+                                        let (ax, ay, bx, by) = if (x, y) < (nx as u32, ny as u32)
+                                        {
+                                            (x, y, nx as u32, ny as u32)
+                                        } else {
+                                            (nx as u32, ny as u32, x, y)
+                                        };
+                                        fusion.push((ax, ay, bx, by));
                                     }
                                 }
                             }
@@ -154,7 +250,6 @@ impl SimulationState {
             })
             .collect();
 
-        // Merge all candidates
         let mut fissile_to_check: Vec<(u32, u32)> = Vec::new();
         let mut decay_to_check: Vec<(u32, u32)> = Vec::new();
         let mut fusion_pairs: Vec<(u32, u32, u32, u32)> = Vec::new();
@@ -163,11 +258,23 @@ impl SimulationState {
             decay_to_check.extend(d);
             fusion_pairs.extend(fu);
         }
+        fusion_pairs.sort_unstable();
+        fusion_pairs.dedup();
 
-        // Process sequentially (reactions involve state changes)
+        self.apply_collected_reactions(rng, fissile_to_check, decay_to_check, fusion_pairs);
+    }
+
+    fn apply_collected_reactions(
+        &mut self,
+        rng: &mut fastrand::Rng,
+        fissile_to_check: Vec<(u32, u32)>,
+        decay_to_check: Vec<(u32, u32)>,
+        fusion_pairs: Vec<(u32, u32, u32, u32)>,
+    ) {
         for (x, y) in fissile_to_check {
             let cur = *self.grid.get(x, y).unwrap();
-            if cur.is_empty() || !is_fissile(cur.element_id) {
+            if cur.is_empty() || !is_fissile(cur.element_id) || cur.has_flag(Particle::FLAG_REACTED)
+            {
                 continue;
             }
             let mut has_neutron = false;
@@ -198,11 +305,11 @@ impl SimulationState {
             }
             if has_neutron {
                 let prob =
-                    Self::fission_probability(cur.element_id, neutron_energy, cur.temperature);
+                    reactions::fission_probability(cur.element_id, neutron_energy, cur.temperature);
                 if rng.f32() < prob {
                     self.trigger_fission(x, y, rng);
                 }
-            } else if rng.f32() < 0.00001 {
+            } else if rng.f32() < reactions::SPONTANEOUS_FISSION_PROB {
                 self.trigger_fission(x, y, rng);
             }
         }
@@ -210,9 +317,12 @@ impl SimulationState {
         for (x1, y1, x2, y2) in fusion_pairs {
             let p1 = *self.grid.get(x1, y1).unwrap();
             let p2 = *self.grid.get(x2, y2).unwrap();
+            if p1.has_flag(Particle::FLAG_REACTED) || p2.has_flag(Particle::FLAG_REACTED) {
+                continue;
+            }
             if p1.temperature > self.settings.fusion_threshold
                 && p2.temperature > self.settings.fusion_threshold
-                && rng.f32() < 0.05
+                && rng.f32() < reactions::FUSION_PROBABILITY
             {
                 self.trigger_fusion(x1, y1, x2, y2, rng);
             }
@@ -220,7 +330,10 @@ impl SimulationState {
 
         for (x, y) in decay_to_check {
             if let Some(p) = self.grid.get(x, y).copied() {
-                let half_life = Self::half_life_ticks(p.element_id);
+                if p.has_flag(Particle::FLAG_REACTED) {
+                    continue;
+                }
+                let half_life = reactions::half_life_ticks(p.element_id);
                 if half_life == 0 {
                     continue;
                 }
@@ -240,7 +353,6 @@ impl SimulationState {
         let total = (w * h) as usize;
         let diff_rate = self.settings.temperature_diffusion_rate;
 
-        // Parallel temperature diffusion
         let new_temps: Vec<u16> = (0..total)
             .into_par_iter()
             .map(|idx| {
@@ -266,7 +378,7 @@ impl SimulationState {
                 }
                 let avg = sum / count;
                 let diffused = cur_temp + (avg - cur_temp) * diff_rate;
-                let cooled = diffused * 0.999 + 293.0 * 0.001;
+                let cooled = diffused * 0.999 + reactions::AMBIENT_TEMP as f32 * 0.001;
                 cooled.clamp(0.0, 5000.0) as u16
             })
             .collect();
@@ -275,14 +387,22 @@ impl SimulationState {
             self.grid.particles[i].temperature = temp;
         }
 
-        // Meltdown, boiling, TNT checks (sequential - sparse operations)
+        self.apply_thermal_effects(rng);
+    }
+
+    fn apply_thermal_effects(&mut self, rng: &mut fastrand::Rng) {
+        let w = self.grid.width;
+        let h = self.grid.height;
         for y in 0..h {
             for x in 0..w {
                 let p = *self.grid.get(x, y).unwrap();
                 if p.is_empty() {
                     continue;
                 }
-                if p.temperature > 2000 && is_fissile(p.element_id) && rng.f32() < 0.01 {
+                if p.temperature > reactions::MELTDOWN_TEMP
+                    && is_fissile(p.element_id)
+                    && rng.f32() < reactions::MELTDOWN_PROB
+                {
                     self.grid
                         .set(x, y, Particle::new(MOLTEN_FUEL, p.temperature));
                     for dy in -1..=1_i32 {
@@ -298,13 +418,13 @@ impl SimulationState {
                         }
                     }
                 }
-                if p.temperature > 2500
+                if p.temperature > reactions::BOIL_TEMP
                     && matches!(p.element_id, WATER | HEAVY_WATER)
-                    && rng.f32() < 0.05
+                    && rng.f32() < reactions::BOIL_PROB
                 {
                     self.grid.set(x, y, Particle::new(HYDROGEN, p.temperature));
                 }
-                if p.element_id == TNT && p.temperature > 500 {
+                if p.element_id == TNT && p.temperature > reactions::TNT_IGNITE_TEMP {
                     self.trigger_tnt(x, y, rng);
                 }
             }
@@ -346,19 +466,42 @@ impl SimulationState {
                     self.grid
                         .set(x, y, Particle::new(id, temp).with_lifetime(20));
                 } else if is_fissile(cell_id) {
-                    let prob = Self::fission_probability(cell_id, ev.energy, cell_temp);
+                    let prob = reactions::fission_probability(cell_id, ev.energy, cell_temp);
                     if rng.f32() < prob {
                         self.trigger_fission(x, y, rng);
                     } else if let Some(target) = self.grid.get_mut(x, y) {
                         target.temperature = target.temperature.saturating_add(20);
                     }
                 } else if cell_id == BORON {
-                    if rng.f32() < 0.8 {
+                    if rng.f32() < reactions::absorber_chance(BORON, ev.energy) {
                         self.grid.set(x, y, Particle::new(FALLOUT, 500));
+                        let ax = (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1)
+                            as u32;
+                        let ay = (y as i32 + rng.i32(-1..=1)).clamp(0, self.grid.height as i32 - 1)
+                            as u32;
+                        if self.grid.get(ax, ay).is_some_and(|p| p.is_empty()) {
+                            self.grid
+                                .set(ax, ay, Particle::new(ALPHA, 400).with_lifetime(0));
+                        }
                     }
+                } else if cell_id == LITHIUM && rng.f32() < reactions::LITHIUM_BREED_CHANCE {
+                    // Li-6 + n -> T + He (simplified single-cell breeding)
+                    self.grid.set(
+                        x,
+                        y,
+                        Particle::new(TRITIUM, cell_temp.saturating_add(50)),
+                    );
+                    let hx = (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1)
+                        as u32;
+                    let hy = (y as i32 + rng.i32(-1..=1)).clamp(0, self.grid.height as i32 - 1)
+                        as u32;
+                    if self.grid.get(hx, hy).is_some_and(|p| p.is_empty()) {
+                        self.grid.set(hx, hy, Particle::new(HELIUM, 400));
+                    }
+                    self.reaction_count += 1;
                 } else if is_moderator(cell_id)
                     && ev.energy == NeutronEnergy::Fast
-                    && rng.f32() < 0.4
+                    && rng.f32() < reactions::moderator_thermalize_chance(cell_id)
                 {
                     self.neutron_queue.push_back(NeutronEvent {
                         x: x.saturating_add_signed(rng.i32(-1..=1)),
@@ -374,6 +517,10 @@ impl SimulationState {
     fn physics_pass(&mut self, rng: &mut fastrand::Rng) {
         if !self.settings.gravity_enabled {
             return;
+        }
+        for p in &mut self.grid.particles {
+            p.clear_flag(Particle::FLAG_MOVED);
+            p.clear_flag(Particle::FLAG_REACTED);
         }
         let w = self.grid.width as i32;
         let h = self.grid.height as i32;
@@ -438,11 +585,11 @@ impl SimulationState {
             return;
         }
         let cur = *self.grid.get(x, y).unwrap();
-        if cur.is_empty() {
+        if cur.is_empty() || cur.has_flag(Particle::FLAG_MOVED) {
             return;
         }
         let cur_kind = kind_for_id(cur.element_id);
-        if is_radiation(cur.element_id) {
+        if is_radiation(cur.element_id) || is_gas(cur.element_id) {
             return;
         }
         let below_y = y + 1;
@@ -451,7 +598,9 @@ impl SimulationState {
         }
         let below = *self.grid.get(x, below_y).unwrap();
         if below.is_empty() {
-            self.grid.set(x, below_y, cur);
+            let mut moved = cur;
+            moved.set_flag(Particle::FLAG_MOVED);
+            self.grid.set(x, below_y, moved);
             self.grid.set(x, y, Particle::air());
             return;
         }
@@ -463,14 +612,17 @@ impl SimulationState {
             || (is_liquid(cur.element_id) && is_liquid(below.element_id) && cur_dens > below_dens);
 
         if can_swap && rng.f32() < 0.9 {
-            self.grid.set(x, below_y, cur);
-            self.grid.set(x, y, below);
+            let mut moved = cur;
+            moved.set_flag(Particle::FLAG_MOVED);
+            let mut swapped = below;
+            swapped.set_flag(Particle::FLAG_MOVED);
+            self.grid.set(x, below_y, moved);
+            self.grid.set(x, y, swapped);
             return;
         }
 
         if cur_kind == ElementKind::Sand
             || cur_kind == ElementKind::Liquid
-            || is_gas(cur.element_id)
             || cur_kind == ElementKind::Solid
         {
             let dirs = if rng.bool() { [-1, 1] } else { [1, -1] };
@@ -482,7 +634,9 @@ impl SimulationState {
                 let nx_u = nx as u32;
                 if let Some(diag) = self.grid.get(nx_u, below_y).copied() {
                     if diag.is_empty() {
-                        self.grid.set(nx_u, below_y, cur);
+                        let mut moved = cur;
+                        moved.set_flag(Particle::FLAG_MOVED);
+                        self.grid.set(nx_u, below_y, moved);
                         self.grid.set(x, y, Particle::air());
                         return;
                     }
@@ -490,8 +644,12 @@ impl SimulationState {
                     if cur_dens > diag_dens + 0.5
                         && (is_liquid(diag.element_id) || is_gas(diag.element_id))
                     {
-                        self.grid.set(nx_u, below_y, cur);
-                        self.grid.set(x, y, diag);
+                        let mut moved = cur;
+                        moved.set_flag(Particle::FLAG_MOVED);
+                        let mut swapped = diag;
+                        swapped.set_flag(Particle::FLAG_MOVED);
+                        self.grid.set(nx_u, below_y, moved);
+                        self.grid.set(x, y, swapped);
                         return;
                     }
                 }
@@ -505,7 +663,9 @@ impl SimulationState {
                     }
                     let nx_u = nx as u32;
                     if self.grid.get(nx_u, y).is_some_and(|p| p.is_empty()) {
-                        self.grid.set(nx_u, y, cur);
+                        let mut moved = cur;
+                        moved.set_flag(Particle::FLAG_MOVED);
+                        self.grid.set(nx_u, y, moved);
                         self.grid.set(x, y, Particle::air());
                         return;
                     }
@@ -587,103 +747,64 @@ impl SimulationState {
         let mut decay_to_check: Vec<(u32, u32)> = Vec::new();
         let mut fusion_pairs: Vec<(u32, u32, u32, u32)> = Vec::new();
 
-        for y in 0..h {
-            for x in 0..w {
-                let id = self.grid.get(x, y).unwrap().element_id;
-                if is_fissile(id) {
-                    fissile_to_check.push((x, y));
+        let active = self.chunk_pool.active_chunks();
+        let cells: Vec<(u32, u32)> = if active.is_empty() {
+            (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .collect()
+        } else {
+            let cs = CHUNK_SIZE as u32;
+            let mut out = Vec::new();
+            for (cx, cy) in active {
+                let start_x = cx * cs;
+                let start_y = cy * cs;
+                let end_x = (start_x + cs).min(w);
+                let end_y = (start_y + cs).min(h);
+                for y in start_y..end_y {
+                    for x in start_x..end_x {
+                        out.push((x, y));
+                    }
                 }
-                if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM) {
-                    decay_to_check.push((x, y));
-                }
-                if id == DEUTERIUM || id == TRITIUM {
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            if dx == 0 && dy == 0 {
-                                continue;
-                            }
-                            let nx = x as i32 + dx;
-                            let ny = y as i32 + dy;
-                            if !self.grid.in_bounds(nx, ny) {
-                                continue;
-                            }
-                            let nid = self.grid.get(nx as u32, ny as u32).unwrap().element_id;
-                            if (id == DEUTERIUM && nid == TRITIUM)
-                                || (id == TRITIUM && nid == DEUTERIUM)
-                            {
-                                fusion_pairs.push((x, y, nx as u32, ny as u32));
-                            }
+            }
+            out
+        };
+
+        for (x, y) in cells {
+            let id = self.grid.get(x, y).unwrap().element_id;
+            if is_fissile(id) {
+                fissile_to_check.push((x, y));
+            }
+            if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM) {
+                decay_to_check.push((x, y));
+            }
+            if id == DEUTERIUM || id == TRITIUM {
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        if dx == 0 && dy == 0 {
+                            continue;
+                        }
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        if !self.grid.in_bounds(nx, ny) {
+                            continue;
+                        }
+                        let nid = self.grid.get(nx as u32, ny as u32).unwrap().element_id;
+                        if (id == DEUTERIUM && nid == TRITIUM) || (id == TRITIUM && nid == DEUTERIUM)
+                        {
+                            let (ax, ay, bx, by) = if (x, y) < (nx as u32, ny as u32) {
+                                (x, y, nx as u32, ny as u32)
+                            } else {
+                                (nx as u32, ny as u32, x, y)
+                            };
+                            fusion_pairs.push((ax, ay, bx, by));
                         }
                     }
                 }
             }
         }
-
-        for (x, y) in fissile_to_check {
-            let cur = *self.grid.get(x, y).unwrap();
-            if cur.is_empty() {
-                continue;
-            }
-            let mut has_neutron = false;
-            let mut neutron_energy = NeutronEnergy::Thermal;
-            for dy in -1..=1 {
-                for dx in -1..=1 {
-                    if dx == 0 && dy == 0 {
-                        continue;
-                    }
-                    let nx = x as i32 + dx;
-                    let ny = y as i32 + dy;
-                    if !self.grid.in_bounds(nx, ny) {
-                        continue;
-                    }
-                    let nid = self.grid.get(nx as u32, ny as u32).unwrap().element_id;
-                    if nid == NEUTRON_THERMAL {
-                        has_neutron = true;
-                        neutron_energy = NeutronEnergy::Thermal;
-                        break;
-                    } else if nid == NEUTRON_FAST {
-                        has_neutron = true;
-                        neutron_energy = NeutronEnergy::Fast;
-                    }
-                }
-                if has_neutron {
-                    break;
-                }
-            }
-            if has_neutron {
-                let prob =
-                    Self::fission_probability(cur.element_id, neutron_energy, cur.temperature);
-                if rng.f32() < prob {
-                    self.trigger_fission(x, y, rng);
-                }
-            } else if rng.f32() < 0.00001 {
-                self.trigger_fission(x, y, rng);
-            }
-        }
-
-        for (x1, y1, x2, y2) in fusion_pairs {
-            let p1 = *self.grid.get(x1, y1).unwrap();
-            let p2 = *self.grid.get(x2, y2).unwrap();
-            if p1.temperature > self.settings.fusion_threshold
-                && p2.temperature > self.settings.fusion_threshold
-                && rng.f32() < 0.05
-            {
-                self.trigger_fusion(x1, y1, x2, y2, rng);
-            }
-        }
-
-        for (x, y) in decay_to_check {
-            if let Some(p) = self.grid.get(x, y).copied() {
-                let half_life = Self::half_life_ticks(p.element_id);
-                if half_life == 0 {
-                    continue;
-                }
-                let prob = 0.693 / half_life as f32;
-                if rng.f32() < prob {
-                    self.trigger_decay(x, y, rng);
-                }
-            }
-        }
+        fusion_pairs.sort_unstable();
+        fusion_pairs.dedup();
+        self.apply_collected_reactions(rng, fissile_to_check, decay_to_check, fusion_pairs);
     }
 
     fn effects_pass(&mut self, rng: &mut fastrand::Rng) {
@@ -715,7 +836,7 @@ impl SimulationState {
                 let avg = sum / count;
                 let diffused =
                     cur_temp + (avg - cur_temp) * self.settings.temperature_diffusion_rate;
-                let cooled = diffused * 0.999 + 293.0 * 0.001;
+                let cooled = diffused * 0.999 + reactions::AMBIENT_TEMP as f32 * 0.001;
                 new_temps[idx] = cooled.clamp(0.0, 5000.0) as u16;
             }
         }
@@ -723,52 +844,24 @@ impl SimulationState {
             self.grid.particles[i].temperature = temp;
         }
 
-        for y in 0..h {
-            for x in 0..w {
-                let p = *self.grid.get(x, y).unwrap();
-                if p.is_empty() {
-                    continue;
-                }
-                if p.temperature > 2000 && is_fissile(p.element_id) && rng.f32() < 0.01 {
-                    self.grid
-                        .set(x, y, Particle::new(MOLTEN_FUEL, p.temperature));
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            let nx = x as i32 + dx;
-                            let ny = y as i32 + dy;
-                            if !self.grid.in_bounds(nx, ny) {
-                                continue;
-                            }
-                            if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
-                                n.temperature = n.temperature.saturating_add(100);
-                            }
-                        }
-                    }
-                }
-                if p.temperature > 2500
-                    && matches!(p.element_id, WATER | HEAVY_WATER)
-                    && rng.f32() < 0.05
-                {
-                    self.grid.set(x, y, Particle::new(HYDROGEN, p.temperature));
-                }
-                if p.element_id == TNT && p.temperature > 500 {
-                    self.trigger_tnt(x, y, rng);
-                }
-            }
-        }
+        self.apply_thermal_effects(rng);
     }
 
     fn trigger_fission(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
         let orig = *self.grid.get(x, y).unwrap();
-        self.grid.set(
-            x,
-            y,
-            Particle::new(FISSION_PRODUCTS, orig.temperature.saturating_add(500)),
+        if orig.has_flag(Particle::FLAG_REACTED) || !is_fissile(orig.element_id) {
+            return;
+        }
+        let mut product = Particle::new(
+            FISSION_PRODUCTS,
+            orig.temperature.saturating_add(reactions::FISSION_SELF_HEAT),
         );
+        product.set_flag(Particle::FLAG_REACTED);
+        self.grid.set(x, y, product);
         self.fission_count += 1;
         self.reaction_count += 1;
 
-        let n_count = rng.u32(2..=3);
+        let n_count = reactions::neutron_count(orig.element_id, rng);
         for _ in 0..n_count {
             let dx = rng.i32(-2..=2);
             let dy = rng.i32(-2..=2);
@@ -808,7 +901,9 @@ impl SimulationState {
     }
 
     fn trigger_fusion(&mut self, x1: u32, y1: u32, x2: u32, y2: u32, rng: &mut fastrand::Rng) {
-        self.grid.set(x1, y1, Particle::new(HELIUM, 3000));
+        let mut helium = Particle::new(HELIUM, 3000);
+        helium.set_flag(Particle::FLAG_REACTED);
+        self.grid.set(x1, y1, helium);
         self.grid.set(x2, y2, Particle::air());
         self.fusion_count += 1;
         self.reaction_count += 1;
@@ -831,7 +926,7 @@ impl SimulationState {
                     continue;
                 }
                 if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
-                    n.temperature = n.temperature.saturating_add(800);
+                    n.temperature = n.temperature.saturating_add(reactions::FUSION_RADIUS_HEAT);
                 }
             }
         }
@@ -839,9 +934,11 @@ impl SimulationState {
 
     fn trigger_decay(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
         let p = *self.grid.get(x, y).unwrap();
-        let daughter = Self::decay_daughter(p.element_id);
-        let radiation = Self::decay_radiation(p.element_id);
-        self.grid.set(x, y, Particle::new(daughter, p.temperature));
+        let daughter = reactions::decay_daughter(p.element_id);
+        let radiation = reactions::decay_radiation(p.element_id);
+        let mut next = Particle::new(daughter, p.temperature);
+        next.set_flag(Particle::FLAG_REACTED);
+        self.grid.set(x, y, next);
         self.decay_count += 1;
 
         let dx = rng.i32(-1..=1);
@@ -874,62 +971,6 @@ impl SimulationState {
             }
         }
         self.grid.set(x, y, Particle::new(FALLOUT, 800));
-    }
-
-    fn fission_probability(element_id: u16, energy: NeutronEnergy, temp: u16) -> f32 {
-        let base = match element_id {
-            U235 => match energy {
-                NeutronEnergy::Thermal => 0.85,
-                NeutronEnergy::Fast => 0.35,
-            },
-            PU239 => match energy {
-                NeutronEnergy::Thermal => 0.90,
-                NeutronEnergy::Fast => 0.40,
-            },
-            U238 => match energy {
-                NeutronEnergy::Thermal => 0.02,
-                NeutronEnergy::Fast => 0.25,
-            },
-            PU240 => match energy {
-                NeutronEnergy::Thermal => 0.10,
-                NeutronEnergy::Fast => 0.30,
-            },
-            _ => 0.0,
-        };
-        let temp_factor = 1.0 + ((temp as f32 - 293.0) / 1000.0).clamp(-0.5, 1.0);
-        (base * temp_factor).clamp(0.0, 0.95)
-    }
-
-    fn half_life_ticks(element_id: u16) -> u64 {
-        match element_id {
-            U235 => 1_000_000,
-            U238 => 2_000_000,
-            PU239 => 500_000,
-            PU240 => 400_000,
-            TRITIUM => 100_000,
-            DEUTERIUM => 0,
-            _ => 0,
-        }
-    }
-
-    fn decay_daughter(element_id: u16) -> u16 {
-        match element_id {
-            U235 => FISSION_PRODUCTS,
-            U238 => DEPLETED_URANIUM,
-            PU239 => U235,
-            PU240 => PU239,
-            TRITIUM => HELIUM,
-            _ => FISSION_PRODUCTS,
-        }
-    }
-
-    fn decay_radiation(element_id: u16) -> u16 {
-        match element_id {
-            U235 | U238 => ALPHA,
-            PU239 | PU240 => ALPHA,
-            TRITIUM => BETA,
-            _ => GAMMA,
-        }
     }
 
     pub fn snapshot_rgba<F>(&self, color_fn: F) -> GridSnapshot

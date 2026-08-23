@@ -1,0 +1,174 @@
+//! Shared nuclear-reaction parameters.
+//!
+//! Single source of truth used by the simulation kernel and (via re-exports)
+//! the elements crate, so `ReactionTable` probabilities cannot drift from
+//! the runtime behaviour.
+
+use crate::element_id::*;
+use serde::{Deserialize, Serialize};
+
+/// Neutron kinetic-energy bin used by fission / moderation / absorption.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NeutronEnergy {
+    Thermal,
+    Fast,
+}
+
+pub const FUSION_THRESHOLD: u16 = 1500;
+pub const FUSION_PROBABILITY: f32 = 0.05;
+pub const SPONTANEOUS_FISSION_PROB: f32 = 0.00001;
+pub const MELTDOWN_TEMP: u16 = 2000;
+pub const MELTDOWN_PROB: f32 = 0.01;
+pub const BOIL_TEMP: u16 = 2500;
+pub const BOIL_PROB: f32 = 0.05;
+pub const TNT_IGNITE_TEMP: u16 = 500;
+pub const LITHIUM_BREED_CHANCE: f32 = 0.40;
+pub const AMBIENT_TEMP: u16 = 293;
+pub const FISSION_SELF_HEAT: u16 = 500;
+pub const FUSION_RADIUS_HEAT: u16 = 800;
+
+/// Base fission probability before the temperature modifier.
+pub fn fission_base_probability(element_id: u16, energy: NeutronEnergy) -> f32 {
+    match element_id {
+        U235 => match energy {
+            NeutronEnergy::Thermal => 0.85,
+            NeutronEnergy::Fast => 0.35,
+        },
+        PU239 => match energy {
+            NeutronEnergy::Thermal => 0.90,
+            NeutronEnergy::Fast => 0.40,
+        },
+        U238 => match energy {
+            NeutronEnergy::Thermal => 0.02,
+            NeutronEnergy::Fast => 0.25,
+        },
+        PU240 => match energy {
+            NeutronEnergy::Thermal => 0.10,
+            NeutronEnergy::Fast => 0.30,
+        },
+        MOLTEN_FUEL => match energy {
+            NeutronEnergy::Thermal => 0.50,
+            NeutronEnergy::Fast => 0.30,
+        },
+        _ => 0.0,
+    }
+}
+
+/// Temperature-adjusted fission probability, clamped to `[0, 0.95]`.
+pub fn fission_probability(element_id: u16, energy: NeutronEnergy, temp: u16) -> f32 {
+    let base = fission_base_probability(element_id, energy);
+    let temp_factor = 1.0 + ((temp as f32 - AMBIENT_TEMP as f32) / 1000.0).clamp(-0.5, 1.0);
+    (base * temp_factor).clamp(0.0, 0.95)
+}
+
+pub fn neutron_count(element_id: u16, rng: &mut fastrand::Rng) -> u32 {
+    match element_id {
+        PU239 => rng.u32(2..=4),
+        _ => rng.u32(2..=3),
+    }
+}
+
+pub fn energy_released_mev(element_id: u16) -> f32 {
+    match element_id {
+        U235 => 202.5,
+        U238 => 205.0,
+        PU239 => 207.0,
+        PU240 => 200.0,
+        MOLTEN_FUEL => 180.0,
+        _ => 0.0,
+    }
+}
+
+pub fn half_life_ticks(element_id: u16) -> u64 {
+    match element_id {
+        U235 => 1_000_000,
+        U238 => 2_000_000,
+        PU239 => 500_000,
+        PU240 => 400_000,
+        TRITIUM => 100_000,
+        _ => 0,
+    }
+}
+
+pub fn decay_daughter(element_id: u16) -> u16 {
+    match element_id {
+        U235 => FISSION_PRODUCTS,
+        U238 => DEPLETED_URANIUM,
+        PU239 => U235,
+        PU240 => PU239,
+        TRITIUM => HELIUM,
+        _ => FALLOUT,
+    }
+}
+
+pub fn decay_radiation(element_id: u16) -> u16 {
+    match element_id {
+        U235 | U238 | PU239 | PU240 => ALPHA,
+        TRITIUM => BETA,
+        _ => GAMMA,
+    }
+}
+
+pub fn moderator_thermalize_chance(id: u16) -> f32 {
+    match id {
+        HEAVY_WATER => 0.5,
+        WATER => 0.4,
+        GRAPHITE => 0.3,
+        _ => 0.0,
+    }
+}
+
+pub fn absorber_chance(id: u16, energy: NeutronEnergy) -> f32 {
+    match (id, energy) {
+        (BORON, NeutronEnergy::Thermal) => 0.8,
+        (BORON, NeutronEnergy::Fast) => 0.6,
+        _ => 0.0,
+    }
+}
+
+/// Scaled k-effective estimate used for the HUD / info panel.
+pub fn criticality_factor(fissile_count: u32, moderator_count: u32, absorber_count: u32) -> f32 {
+    let production = fissile_count as f32 * 2.5;
+    let moderation = (moderator_count as f32 * 0.3).min(1.5);
+    let absorption = absorber_count as f32 * 0.8;
+    let escape = 0.2;
+    let k = (production * (1.0 + moderation)) / (1.0 + absorption + escape);
+    k / 100.0
+}
+
+pub fn is_critical(mass_count: u32, threshold: u32) -> bool {
+    mass_count >= threshold
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u235_prefers_thermal_neutrons() {
+        let thermal = fission_base_probability(U235, NeutronEnergy::Thermal);
+        let fast = fission_base_probability(U235, NeutronEnergy::Fast);
+        assert!(thermal > fast);
+        assert!((thermal - 0.85).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn u238_is_fast_fission_threshold() {
+        let thermal = fission_base_probability(U238, NeutronEnergy::Thermal);
+        let fast = fission_base_probability(U238, NeutronEnergy::Fast);
+        assert!(fast > thermal);
+        assert!(thermal < 0.05);
+    }
+
+    #[test]
+    fn tritium_decays_to_helium_via_beta() {
+        assert_eq!(decay_daughter(TRITIUM), HELIUM);
+        assert_eq!(decay_radiation(TRITIUM), BETA);
+        assert!(half_life_ticks(TRITIUM) > 0);
+    }
+
+    #[test]
+    fn heavy_water_moderates_better_than_graphite() {
+        assert!(moderator_thermalize_chance(HEAVY_WATER) > moderator_thermalize_chance(GRAPHITE));
+    }
+}

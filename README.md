@@ -2,7 +2,7 @@
 
 Cross-Platform Falling-Sand Simulation with Advanced Nuclear Physics
 
-Powder Toy inspired simulation written in Rust 1.97.1, targeting Windows, Linux, macOS, and WebAssembly.
+Powder Toy inspired simulation written in Rust 1.85+, targeting Windows, Linux, macOS, and WebAssembly.
 
 ## Features
 

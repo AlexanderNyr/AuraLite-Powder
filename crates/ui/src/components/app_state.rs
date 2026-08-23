@@ -102,6 +102,7 @@ pub struct InfoPanel {
     pub tick_rate: f32,
     pub particle_count: usize,
     pub active_reactions: u64,
+    pub k_effective: f32,
 }
 
 impl Default for InfoPanel {
@@ -111,6 +112,7 @@ impl Default for InfoPanel {
             tick_rate: 0.0,
             particle_count: 0,
             active_reactions: 0,
+            k_effective: 0.0,
         }
     }
 }
@@ -167,6 +169,7 @@ impl AppState {
         self.info.fps = fps;
         self.info.particle_count = self.simulation.grid.count_non_empty();
         self.info.active_reactions = self.simulation.reaction_count;
+        self.info.k_effective = self.simulation.k_effective;
         self.info.tick_rate = self.controller.tick_rate as f32 * self.controller.speed;
     }
 

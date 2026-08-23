@@ -5,35 +5,70 @@
 <title>AuraLite Powder - WASM Demo</title>
 <style>
 body { margin:0; background:#111; color:#eee; font-family: sans-serif; display:flex; flex-direction:column; align-items:center; }
-canvas { border:1px solid #555; margin-top:10px; image-rendering: pixelated; }
+canvas { border:1px solid #555; margin-top:10px; image-rendering: pixelated; width:512px; height:512px; }
 #info { margin:10px; max-width:800px; }
+#palette button { margin:2px; }
 </style>
 </head>
 <body>
 <h1>AuraLite Powder - Nuclear Falling Sand (WASM)</h1>
-<canvas id="canvas" width="512" height="512"></canvas>
+<canvas id="canvas" width="256" height="256"></canvas>
+<div id="palette">
+  <button data-id="1">Sand</button>
+  <button data-id="2">Water</button>
+  <button data-id="4">U-235</button>
+  <button data-id="13">Neutron</button>
+  <button data-id="21">Deuterium</button>
+  <button data-id="20">Tritium</button>
+  <button data-id="0">Erase</button>
+</div>
 <div id="info">
-<p>Demo: U-235 pile with thermal neutron, D+T fusion sample at 30,30.</p>
-<p>Native build: <code>cargo run --release</code></p>
-<p>Controls in native: paint, zoom wheel, right-drag pan, 1-6 quick select, Space pause, C clear, S save.</p>
-<div id="log"></div>
+<p>Click/drag to paint. Space pauses. Demo: U-235 pile + D+T sample.</p>
+<div id="log">Loading…</div>
 </div>
 <script type="module">
-import init, { start_sim, create_simulation } from "./pkg/aura_lite_wasm.js";
+import init, { create_simulation } from "./pkg/aura_lite_wasm.js";
+
+let sim;
+let selected = 1;
+let painting = false;
+let paused = false;
+
+function gridPos(ev, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - rect.left) * sim.width() / rect.width);
+  const y = Math.floor((ev.clientY - rect.top) * sim.height() / rect.height);
+  return [x, y];
+}
+
 async function run() {
   await init();
-  console.log("WASM module loaded");
-  try {
-    start_sim("canvas");
-    document.getElementById("log").innerText = "Simulation started - rendered one frame. Open console for logs.";
-  } catch(e) {
-    console.error(e);
-    document.getElementById("log").innerText = "Error: " + e;
-  }
+  sim = create_simulation(256, 256);
+  const canvas = document.getElementById("canvas");
+  const logEl = document.getElementById("log");
 
-  // Benchmark
-  const { run_tick_test } = await import("./pkg/aura_lite_wasm.js");
-  // run_tick_test is exported
+  canvas.addEventListener("mousedown", (e) => { painting = true; const [x,y] = gridPos(e, canvas); sim.paint(x, y, selected, 2, 293); });
+  window.addEventListener("mouseup", () => { painting = false; });
+  canvas.addEventListener("mousemove", (e) => {
+    if (!painting) return;
+    const [x,y] = gridPos(e, canvas);
+    sim.paint(x, y, selected, 2, 293);
+  });
+  document.querySelectorAll("#palette button").forEach((btn) => {
+    btn.addEventListener("click", () => { selected = Number(btn.dataset.id); });
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") { paused = !paused; e.preventDefault(); }
+    if (e.key === "c" || e.key === "C") sim.clear();
+  });
+
+  function frame() {
+    if (!paused) sim.tick();
+    sim.render("canvas");
+    logEl.innerText = `particles=${sim.particle_count()} fission=${sim.fission_count()} fusion=${sim.fusion_count()} k-eff=${sim.k_effective().toFixed(3)}`;
+    requestAnimationFrame(frame);
+  }
+  frame();
 }
 run();
 </script>

@@ -82,24 +82,26 @@ fn test_fission_chain_reaction_starts() {
 
 #[test]
 fn test_boron_absorbs_neutrons() {
-    let mut sim = SimulationState::new(10, 10, 0);
-    sim.grid.set(5, 5, Particle::new(BORON, 293));
-    sim.grid.set(5, 4, Particle::new(NEUTRON_THERMAL, 350));
-
-    // Wait for neutron to move into boron
-    for _ in 0..10 {
+    let mut absorbed = false;
+    for seed in 0..40 {
+        let mut sim = SimulationState::new(10, 10, seed);
+        sim.grid.set(5, 5, Particle::new(BORON, 293));
+        sim.neutron_queue.push_back(NeutronEvent {
+            x: 5,
+            y: 5,
+            delay: 0,
+            energy: NeutronEnergy::Thermal,
+        });
         sim.tick();
+        let has_fallout = (0..10).any(|y| {
+            (0..10).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(FALLOUT))
+        });
+        if has_fallout {
+            absorbed = true;
+            break;
+        }
     }
-
-    // Either the neutron was absorbed (boron -> fallout) or moved away
-    // Check if boron transformed
-    let boron_found =
-        (0..10).any(|y| (0..10).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(FALLOUT)));
-    // Not always guaranteed due to randomness, but likely
-    // At minimum, verify we didn't crash
-    let total = sim.grid.count_non_empty();
-    assert!(total > 0 || total == 0); // always true, just verify no panic
-    let _ = boron_found;
+    assert!(absorbed, "Boron should absorb a queued thermal neutron in some seeds");
 }
 
 #[test]
@@ -231,22 +233,53 @@ fn test_neutron_queue_delay() {
 
 #[test]
 fn test_fusion_triggers_at_high_temp() {
-    let mut sim = SimulationState::new(20, 20, 0);
-
-    // Place D+T at high temperature
-    sim.grid.set(10, 10, Particle::new(DEUTERIUM, 2000));
-    sim.grid.set(11, 10, Particle::new(TRITIUM, 2000));
-
-    sim.settings.fusion_threshold = 1500;
-
-    for _ in 0..50 {
-        sim.tick();
+    let mut fused = false;
+    for seed in 0..8 {
+        let mut sim = SimulationState::new(20, 20, seed);
+        for x in 8..14 {
+            sim.grid.set(x, 10, Particle::new(DEUTERIUM, 2000));
+            sim.grid.set(x, 11, Particle::new(TRITIUM, 2000));
+        }
+        sim.settings.fusion_threshold = 1500;
+        for _ in 0..80 {
+            sim.tick();
+        }
+        if sim.fusion_count > 0 {
+            fused = true;
+            break;
+        }
     }
+    assert!(fused, "D+T pairs at 2000 K should fuse in at least one seed");
+}
 
-    // After 50 ticks at high temp, fusion should have triggered at least sometimes
-    // At 5% per tick, expected ~2.5 fusions, but due to randomness may be 0
-    // Just ensure no crash
-    assert!(sim.grid.get(10, 10).is_some());
+#[test]
+fn test_lithium_breeds_tritium() {
+    let mut bred = false;
+    for seed in 0..40 {
+        let mut sim = SimulationState::new(10, 10, seed);
+        sim.grid.set(5, 5, Particle::new(LITHIUM, 293));
+        sim.neutron_queue.push_back(NeutronEvent {
+            x: 5,
+            y: 5,
+            delay: 0,
+            energy: NeutronEnergy::Thermal,
+        });
+        sim.tick();
+        if sim.grid.get(5, 5).map(|p| p.element_id) == Some(TRITIUM) {
+            bred = true;
+            break;
+        }
+    }
+    assert!(bred, "Lithium + neutron should breed tritium in some seeds");
+}
+
+#[test]
+fn test_gases_are_classified_as_gas() {
+    assert_eq!(kind_for_id(HELIUM), ElementKind::Gas);
+    assert_eq!(kind_for_id(HYDROGEN), ElementKind::Gas);
+    assert_eq!(kind_for_id(TRITIUM), ElementKind::Gas);
+    assert_eq!(kind_for_id(DEUTERIUM), ElementKind::Gas);
+    assert!(is_gas(HELIUM));
 }
 
 #[test]

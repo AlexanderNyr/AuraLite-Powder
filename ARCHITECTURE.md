@@ -87,11 +87,10 @@ SoftbufferBackend:
 
 WgpuBackend (optional):
 
-- StorageTexture containing particle colors
-- Fullscreen triangle vertex shader
-- Fragment samples storage texture, applies optional post-process glow
-- Uniforms: width,height,scale,offset for camera
-- Shader embedded via include_str! from assets/shaders/
+- Creates a wgpu device/queue at init and compiles `assets/shaders/shader.wgsl`
+- Uploads a grid-sized RGBA8 texture each frame (row pitch 256-aligned)
+- Fullscreen triangle + nearest `textureLoad` with camera uniforms
+- Falls back to the CPU buffer if no adapter is present
 
 Separation Simulation vs Render threads (planned):
 
@@ -128,6 +127,7 @@ Egui integration (native-ui feature):
 - Tool sliders
 - Simulation controls
 - Save/load using rfd
+- Meshes are CPU-rasterized into the `pixels` framebuffer (`egui_raster`) so the panels are visible
 
 Web Considerations:
 

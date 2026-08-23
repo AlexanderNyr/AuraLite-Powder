@@ -89,6 +89,7 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
     ui.label(format!("Fission: {}", app.simulation.fission_count));
     ui.label(format!("Fusion: {}", app.simulation.fusion_count));
     ui.label(format!("Decay: {}", app.simulation.decay_count));
+    ui.label(format!("k-eff: {:.3}", app.simulation.k_effective));
     ui.label(format!(
         "Neutron queue: {}",
         app.simulation.neutron_queue.len()
@@ -148,10 +149,10 @@ pub fn show_save_load(ui: &mut Ui, app: &mut AppState) {
                 .add_filter("Aura save", &["aura", "json"])
                 .pick_file()
             {
-                if let Ok((grid, settings)) = aura_lite_io::load_from_file(&path) {
-                    app.simulation.grid = grid;
-                    app.simulation.settings = settings;
-                    app.save_load.last_save_path = Some(path.display().to_string());
+                if let Ok(save) = aura_lite_io::load_save_from_file(&path) {
+                    if save.apply_to(&mut app.simulation).is_ok() {
+                        app.save_load.last_save_path = Some(path.display().to_string());
+                    }
                 }
             }
         }
