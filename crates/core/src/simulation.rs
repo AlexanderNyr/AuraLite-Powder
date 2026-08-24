@@ -356,6 +356,14 @@ impl SimulationState {
             decay_to_check.extend(d);
             fusion_pairs.extend(fu);
         }
+        // P2 determinism: par_iter returns chunk results in a thread-count-dependent
+        // order, so the candidate lists must be sorted (and de-duplicated) before
+        // the rng-driven application. Without this, the same grid produces different
+        // fission/decay outcomes on 1 vs N threads. fusion_pairs was already sorted.
+        fissile_to_check.sort_unstable();
+        fissile_to_check.dedup();
+        decay_to_check.sort_unstable();
+        decay_to_check.dedup();
         fusion_pairs.sort_unstable();
         fusion_pairs.dedup();
 
@@ -452,7 +460,7 @@ impl SimulationState {
         let diff_rate = self.settings.temperature_diffusion_rate;
 
         let _ = (w, h, total);
-        physics::diffuse_heat_active(&mut self.grid, diff_rate, Some(&self.chunk_pool));
+        physics::diffuse_heat_parallel(&mut self.grid, diff_rate, Some(&self.chunk_pool));
         physics::apply_phase_changes(&mut self.grid, rng);
         self.apply_thermal_effects(rng);
     }

@@ -34,7 +34,7 @@ impl Rng {
 fn fingerprint(sim: &SimulationState) -> (usize, u64) {
     let mut count = 0usize;
     let mut h: u64 = 0xcbf29ce484222325; // FNV offset
-    for (i, p) in sim.grid.particles.iter().enumerate() {
+    for (i, p) in sim.grid.iter_particles().enumerate() {
         if p.is_empty() {
             continue;
         }
@@ -205,7 +205,7 @@ fn prop_save_roundtrip_preserves_grid() {
         save.apply_to(&mut loaded).unwrap();
         assert_eq!(loaded.grid.width, sim.grid.width);
         assert_eq!(loaded.grid.height, sim.grid.height);
-        assert_eq!(loaded.grid.particles, sim.grid.particles, "save round-trip lost a cell");
+        assert_eq!(loaded.grid.particles_vec(), sim.grid.particles_vec(), "save round-trip lost a cell");
         assert_eq!(loaded.tick, sim.tick);
     }
 }
@@ -312,4 +312,45 @@ fn invariant_registry_and_core_density_agree() {
             def.name, def.density, core_d
         );
     }
+}
+
+// ───────────────────────── P2: determinism across thread counts ─────────────
+/// P2 gate: a grid large enough to take the parallel passes (>= 65536 cells)
+/// must produce a byte-identical result whether the rayon pool has 1, 2, or 4
+/// threads. Before P2 the reaction pass's par_iter collected candidates in a
+/// thread-count-dependent order, so fission/decay outcomes diverged.
+#[test]
+fn deterministic_across_thread_counts() {
+    use rayon::ThreadPoolBuilder;
+    let build = || {
+        let mut s = SimulationState::new(256, 256, SEED);
+        // U-235 pile + water moderator + a starter neutron: exercises the
+        // parallel reaction pass (fission) and the parallel heat pass.
+        for y in 96..144 {
+            for x in 96..128 {
+                s.grid.set(x, y, Particle::new(U235, 400));
+            }
+            for x in 128..160 {
+                s.grid.set(x, y, Particle::new(WATER, 320));
+            }
+        }
+        s.grid.set(112, 95, Particle::new(NEUTRON_THERMAL, 350));
+        s
+    };
+    let run = |threads: usize| -> (usize, u64) {
+        let pool = ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        let mut s = build();
+        let ptr = &mut s;
+        pool.install(move || {
+            for _ in 0..25 {
+                ptr.tick();
+            }
+        });
+        fingerprint(&s)
+    };
+    let base = run(1);
+    let t2 = run(2);
+    let t4 = run(4);
+    assert_eq!(base, t2, "P2 determinism broken: 1-thread != 2-thread");
+    assert_eq!(base, t4, "P2 determinism broken: 1-thread != 4-thread");
 }

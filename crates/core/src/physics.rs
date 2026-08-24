@@ -646,6 +646,81 @@ pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chun
     }
 }
 
+/// Per-cell conductivity-weighted heat value (Jacobi read of current state).
+/// Shared by the sequential and parallel heat solvers so they cannot drift.
+fn heat_step_cell(grid: &Grid, x: u32, y: u32, idx: usize, rate: f32) -> u16 {
+    let cur = grid.particle_at(idx);
+    let k0 = conductivity(cur.element_id);
+    let t0 = cur.temperature as f32;
+    let mut acc = t0;
+    let mut wsum = 1.0;
+    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        let nx = x as i32 + dx;
+        let ny = y as i32 + dy;
+        if !grid.in_bounds(nx, ny) {
+            continue;
+        }
+        let n = grid.particle_at(grid.index(nx as u32, ny as u32));
+        let k = 0.5 * (k0 + conductivity(n.element_id));
+        acc += n.temperature as f32 * k;
+        wsum += k;
+    }
+    let mixed = acc / wsum;
+    let diffused = t0 + (mixed - t0) * rate;
+    let leak = if cur.is_empty() { 0.004 } else { 0.001 };
+    let cooled = diffused * (1.0 - leak) + reactions::AMBIENT_TEMP as f32 * leak;
+    cooled.clamp(0.0, 5000.0) as u16
+}
+
+/// Parallel Jacobi heat step. Each cell's next temperature depends only on the
+/// current (read-only) state, so the compute is embarrassingly parallel: the
+/// shared `&Grid` is read while every thread writes a disjoint `next[idx]`.
+/// Deterministic by construction (no RNG).
+pub fn diffuse_heat_parallel(grid: &mut Grid, rate: f32, pool: Option<&crate::chunk::ChunkPool>) {
+    use rayon::prelude::*;
+    let w = grid.width;
+    if w == 0 || grid.height == 0 {
+        return;
+    }
+    let len = grid.len();
+    let mut mask = vec![true; len];
+    if let Some(pool) = pool {
+        let chunks = pool.expanded_active(1);
+        if chunks.is_empty() {
+            return;
+        }
+        mask.fill(false);
+        let cs = crate::chunk::CHUNK_SIZE as u32;
+        for &(cx, cy) in &chunks {
+            let x0 = cx * cs;
+            let y0 = cy * cs;
+            let x1 = (x0 + cs).min(w);
+            let y1 = (y0 + cs).min(grid.height);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    mask[grid.index(x, y)] = true;
+                }
+            }
+        }
+    }
+    let grid_ref: &Grid = grid;
+    let mut next = vec![0u16; len];
+    next.par_iter_mut().enumerate().for_each(|(idx, slot)| {
+        if !mask[idx] {
+            *slot = grid_ref.temperature_at(idx);
+            return;
+        }
+        let y = (idx / w as usize) as u32;
+        let x = (idx % w as usize) as u32;
+        *slot = heat_step_cell(grid_ref, x, y, idx, rate);
+    });
+    for (i, t) in next.into_iter().enumerate() {
+        if mask[i] {
+            grid.set_temperature_at(i, t);
+        }
+    }
+}
+
 /// Knock neighboring movable cells away from an explosion center.
 pub fn apply_impulse(
     grid: &mut Grid,
