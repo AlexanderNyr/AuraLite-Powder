@@ -13,7 +13,9 @@
 
 use aura_lite_core::SimulationState;
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
-use aura_lite_renderer::{render_simulation_ex, Camera as RendererCamera};
+use aura_lite_renderer::{
+    render_simulation_ex, stamp_preview, stroke_world_rect, Camera as RendererCamera,
+};
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
 use aura_lite_ui::{brush::BrushTool, AppState};
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
@@ -216,6 +218,9 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                     let world = camera.screen_to_world(mouse_pos);
                     let gx = world.x as i32;
                     let gy = world.y as i32;
+                    if let Some((x0, y0, _, _)) = app_state.drag_rect {
+                        app_state.drag_rect = Some((x0, y0, gx, gy));
+                    }
                     apply_brush(&mut app_state, gx, gy, false);
                 }
             }
@@ -242,6 +247,7 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                                 BrushTool::Line | BrushTool::Rectangle | BrushTool::Copy
                             ) {
                                 line_start = Some((gx, gy));
+                                app_state.drag_rect = Some((gx, gy, gx, gy));
                             } else {
                                 apply_brush(&mut app_state, gx, gy, true);
                             }
@@ -249,6 +255,7 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                     }
                     (MouseButton::Left, ElementState::Released) => {
                         mouse_down = false;
+                        app_state.drag_rect = None;
                         if let Some(start) = line_start.take() {
                             let world = camera.screen_to_world(mouse_pos);
                             let gx = world.x as i32;
@@ -341,12 +348,44 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                                 log::info!("Wrote auralite_screenshot.png");
                             }
                         }
-                        winit::keyboard::Key::Character(c) if c == "1" => { app_state.set_selected_element(1); }
-                        winit::keyboard::Key::Character(c) if c == "2" => { app_state.set_selected_element(2); }
-                        winit::keyboard::Key::Character(c) if c == "3" => { app_state.set_selected_element(4); }
-                        winit::keyboard::Key::Character(c) if c == "4" => { app_state.set_selected_element(13); }
-                        winit::keyboard::Key::Character(c) if c == "5" => { app_state.set_selected_element(21); }
-                        winit::keyboard::Key::Character(c) if c == "6" => { app_state.set_selected_element(20); }
+                        winit::keyboard::Key::Character(c) if c == "1" => { app_state.select_hotbar(0); }
+                        winit::keyboard::Key::Character(c) if c == "2" => { app_state.select_hotbar(1); }
+                        winit::keyboard::Key::Character(c) if c == "3" => { app_state.select_hotbar(2); }
+                        winit::keyboard::Key::Character(c) if c == "4" => { app_state.select_hotbar(3); }
+                        winit::keyboard::Key::Character(c) if c == "5" => { app_state.select_hotbar(4); }
+                        winit::keyboard::Key::Character(c) if c == "6" => { app_state.select_hotbar(5); }
+                        winit::keyboard::Key::Character(c) if c == "7" => { app_state.select_hotbar(6); }
+                        winit::keyboard::Key::Character(c) if c == "8" => { app_state.select_hotbar(7); }
+                        winit::keyboard::Key::Character(c) if c == "9" => { app_state.select_hotbar(8); }
+                        winit::keyboard::Key::Character(c) if c == "0" => { app_state.select_hotbar(9); }
+                        winit::keyboard::Key::Character(c) if c == "," => { app_state.cycle_hotbar(-1); }
+                        winit::keyboard::Key::Character(c) if c == "." => { app_state.cycle_hotbar(1); }
+                        winit::keyboard::Key::Character(c) if c == "r" || c == "R" => {
+                            if app_state.recording {
+                                app_state.recording = false;
+                                if !app_state.rec_frames.is_empty() {
+                                    let path = std::env::current_dir()
+                                        .unwrap_or_else(|_| std::env::temp_dir())
+                                        .join("auralite.gif");
+                                    if let Err(e) = aura_lite_io::gif89a::write_gif_file(
+                                        &path,
+                                        &app_state.rec_frames,
+                                        app_state.rec_w as u16,
+                                        app_state.rec_h as u16,
+                                        8,
+                                    ) {
+                                        log::error!("GIF write failed: {e}");
+                                    } else {
+                                        log::info!("Wrote {} frames to {:?}", app_state.rec_frames.len(), path);
+                                    }
+                                    app_state.rec_frames.clear();
+                                }
+                            } else {
+                                app_state.recording = true;
+                                app_state.rec_frames.clear();
+                                log::info!("GIF recording started (R again to stop)");
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -360,6 +399,14 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 while tick_accumulator >= target_tick {
                     if !app_state.controller.paused {
                         app_state.simulation.tick();
+                    }
+                    if app_state.recording {
+                        let buf = aura_lite_renderer::render_grid_with_glow(&app_state.simulation);
+                        app_state.push_rec_frame(
+                            &buf,
+                            app_state.simulation.grid.width,
+                            app_state.simulation.grid.height,
+                        );
                     }
                     tick_accumulator -= target_tick;
                 }
@@ -395,6 +442,39 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                         &camera,
                         app_state.overlay,
                     );
+                    if let Some((x0, y0, x1, y1)) = app_state.drag_rect {
+                        stroke_world_rect(
+                            frame,
+                            sz.width,
+                            sz.height,
+                            &camera,
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                            [255, 220, 40, 255],
+                        );
+                    }
+                    if matches!(app_state.tools.brush.tool, BrushTool::Stamp)
+                        && !app_state.clipboard.is_empty()
+                    {
+                        if let (Some(hx), Some(hy)) =
+                            (app_state.inspector.hovered_x, app_state.inspector.hovered_y)
+                        {
+                            let offs: Vec<(i32, i32)> =
+                                app_state.clipboard.iter().map(|&(dx, dy, _)| (dx, dy)).collect();
+                            stamp_preview(
+                                frame,
+                                sz.width,
+                                sz.height,
+                                &camera,
+                                hx as i32,
+                                hy as i32,
+                                &offs,
+                                [180, 255, 180, 255],
+                            );
+                        }
+                    }
                 }
                 #[cfg(feature = "native-ui")]
                 {

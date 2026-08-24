@@ -78,6 +78,12 @@ fn put(sim: &mut SimulationState, x: u32, y: u32, id: u16, t: u16) {
     }
 }
 
+fn puti(sim: &mut SimulationState, x: i32, y: i32, id: u16, t: u16) {
+    if x >= 0 && y >= 0 {
+        put(sim, x as u32, y as u32, id, t);
+    }
+}
+
 fn floor(sim: &mut SimulationState, id: u16) {
     let w = sim.grid.width;
     let h = sim.grid.height;
@@ -92,16 +98,17 @@ fn setup_controlled_reactor(sim: &mut SimulationState) {
     let w = sim.grid.width;
     let h = sim.grid.height;
     // Replace boron sprinkles with two solid control rods that can be racked.
+    let cx = w as i32 / 2;
     for y in h.saturating_sub(18)..h.saturating_sub(3) {
-        put(sim, w / 2 - 14, y, CONTROL_ROD, reactions::AMBIENT_TEMP);
-        put(sim, w / 2 + 14, y, CONTROL_ROD, reactions::AMBIENT_TEMP);
-        put(sim, w / 2 - 13, y, CONTROL_ROD, reactions::AMBIENT_TEMP);
-        put(sim, w / 2 + 13, y, CONTROL_ROD, reactions::AMBIENT_TEMP);
+        puti(sim, cx - 14, y as i32, CONTROL_ROD, reactions::AMBIENT_TEMP);
+        puti(sim, cx + 14, y as i32, CONTROL_ROD, reactions::AMBIENT_TEMP);
+        puti(sim, cx - 13, y as i32, CONTROL_ROD, reactions::AMBIENT_TEMP);
+        puti(sim, cx + 13, y as i32, CONTROL_ROD, reactions::AMBIENT_TEMP);
     }
     // Coolant jacket
     for y in h.saturating_sub(14)..h.saturating_sub(4) {
-        put(sim, w / 2 - 10, y, WATER, 310);
-        put(sim, w / 2 + 10, y, WATER, 310);
+        puti(sim, cx - 10, y as i32, WATER, 310);
+        puti(sim, cx + 10, y as i32, WATER, 310);
     }
 }
 
@@ -185,34 +192,48 @@ fn setup_fusion_cell(sim: &mut SimulationState) {
 
 fn setup_coolant_loop(sim: &mut SimulationState) {
     floor(sim, CONCRETE);
-    let x0 = sim.grid.width / 2 - 20;
-    let x1 = sim.grid.width / 2 + 20;
-    let y0 = sim.grid.height / 2 - 12;
-    let y1 = sim.grid.height / 2 + 12;
+    let x0 = sim.grid.width / 2 - 22;
+    let x1 = sim.grid.width / 2 + 22;
+    let y0 = sim.grid.height / 2 - 14;
+    let y1 = sim.grid.height / 2 + 14;
+    // Double-wall pipe rectangle so the channel stays closed.
     for x in x0..=x1 {
         put(sim, x, y0, PIPE, 293);
+        put(sim, x, y0 + 1, PIPE, 293);
         put(sim, x, y1, PIPE, 293);
-        if x > x0 && x < x1 {
-            put(sim, x, y0 + 1, WATER, 300);
-            put(sim, x, y1 - 1, WATER, 300);
-        }
+        put(sim, x, y1 - 1, PIPE, 293);
     }
     for y in y0..=y1 {
         put(sim, x0, y, PIPE, 293);
+        put(sim, x0 + 1, y, PIPE, 293);
         put(sim, x1, y, PIPE, 293);
-        if y > y0 && y < y1 {
-            put(sim, x0 + 1, y, WATER, 300);
-            put(sim, x1 - 1, y, WATER, 300);
-        }
+        put(sim, x1 - 1, y, PIPE, 293);
     }
-    put(sim, x0 + 1, y1 - 1, PUMP, 293);
-    put(sim, x1 - 1, y0 + 1, HEATER, 1200);
-    for y in y0 + 3..y1 - 3 {
+    // Water fills the inner corridor (2 cells wide).
+    for x in x0 + 2..x1 - 1 {
+        put(sim, x, y0 + 2, WATER, 300);
+        put(sim, x, y0 + 3, WATER, 300);
+        put(sim, x, y1 - 2, WATER, 300);
+        put(sim, x, y1 - 3, WATER, 300);
+    }
+    for y in y0 + 2..y1 - 1 {
+        put(sim, x0 + 2, y, WATER, 300);
+        put(sim, x0 + 3, y, WATER, 300);
+        put(sim, x1 - 2, y, WATER, 300);
+        put(sim, x1 - 3, y, WATER, 300);
+    }
+    put(sim, x0 + 2, y1 - 2, PUMP, 293);
+    put(sim, x0 + 3, y1 - 3, PUMP, 293);
+    put(sim, x1 - 2, y0 + 2, HEATER, 1400);
+    put(sim, x1 - 3, y0 + 3, HEATER, 1400);
+    // Fuel island in the dry centre, jacketed by the loop.
+    for y in y0 + 6..y1 - 6 {
         for x in sim.grid.width / 2 - 4..sim.grid.width / 2 + 4 {
             put(sim, x, y, U235, 400);
         }
     }
-    put(sim, sim.grid.width / 2, y0 + 4, NEUTRON_THERMAL, 350);
+    put(sim, sim.grid.width / 2, y0 + 7, NEUTRON_THERMAL, 350);
+    put(sim, x1 - 6, y0 + 5, SENSOR, 293);
 }
 
 fn setup_forest_fire(sim: &mut SimulationState) {

@@ -77,6 +77,72 @@ pub fn render_simulation_ex(
     }
 }
 
+/// Stroke a world-space rectangle (copy / stamp preview).
+pub fn stroke_world_rect(
+    frame: &mut [u8],
+    frame_w: u32,
+    frame_h: u32,
+    camera: &Camera,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    color: [u8; 4],
+) {
+    let min_x = x0.min(x1);
+    let max_x = x0.max(x1);
+    let min_y = y0.min(y1);
+    let max_y = y0.max(y1);
+    for y in min_y..=max_y {
+        put_world(frame, frame_w, frame_h, camera, min_x, y, color);
+        put_world(frame, frame_w, frame_h, camera, max_x, y, color);
+    }
+    for x in min_x..=max_x {
+        put_world(frame, frame_w, frame_h, camera, x, min_y, color);
+        put_world(frame, frame_w, frame_h, camera, x, max_y, color);
+    }
+}
+
+/// Ghost-stamp the clipboard offsets at the cursor.
+pub fn stamp_preview(
+    frame: &mut [u8],
+    frame_w: u32,
+    frame_h: u32,
+    camera: &Camera,
+    cx: i32,
+    cy: i32,
+    offsets: &[(i32, i32)],
+    color: [u8; 4],
+) {
+    for &(dx, dy) in offsets {
+        put_world(frame, frame_w, frame_h, camera, cx + dx, cy + dy, color);
+    }
+}
+
+fn put_world(
+    frame: &mut [u8],
+    frame_w: u32,
+    frame_h: u32,
+    camera: &Camera,
+    gx: i32,
+    gy: i32,
+    color: [u8; 4],
+) {
+    let screen = camera.world_to_screen(Vec2::new(gx as f32 + 0.5, gy as f32 + 0.5));
+    let x = screen.x as i32;
+    let y = screen.y as i32;
+    if x < 0 || y < 0 || x >= frame_w as i32 || y >= frame_h as i32 {
+        return;
+    }
+    let idx = ((y as u32 * frame_w + x as u32) * 4) as usize;
+    if idx + 3 < frame.len() {
+        frame[idx] = color[0];
+        frame[idx + 1] = color[1];
+        frame[idx + 2] = color[2];
+        frame[idx + 3] = 255;
+    }
+}
+
 /// Grid-sized RGBA buffer with temperature glow, used as a GPU texture upload.
 pub fn render_grid_with_glow(sim: &SimulationState) -> Vec<u8> {
     let w = sim.grid.width as usize;

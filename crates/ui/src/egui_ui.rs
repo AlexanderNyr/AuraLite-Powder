@@ -13,22 +13,54 @@ pub fn show_palette(ui: &mut Ui, app: &mut AppState) {
         ui.label("Search:");
         ui.text_edit_singleline(&mut app.palette.search_query);
     });
+    ui.label("Hotbar 1–0  (comma/period cycle)");
+    ui.horizontal_wrapped(|ui| {
+        for (i, &id) in app.palette.hotbar.iter().enumerate() {
+            let name = aura_lite_elements::registry::name_for_id(id);
+            let key = if i == 9 { 0 } else { i + 1 };
+            let label = format!("{key}:{name}");
+            let selected = app.palette.selected_id == id;
+            let btn = if selected {
+                egui::Button::new(label).fill(egui::Color32::from_rgb(80, 80, 200))
+            } else {
+                egui::Button::new(label)
+            };
+            if ui.add(btn).clicked() {
+                app.set_selected_element(id);
+            }
+        }
+    });
+    if !app.palette.favorites.is_empty() {
+        ui.label("Favorites");
+        ui.horizontal_wrapped(|ui| {
+            for &id in &app.palette.favorites.clone() {
+                let name = aura_lite_elements::registry::name_for_id(id);
+                if ui.button(name).clicked() {
+                    app.set_selected_element(id);
+                }
+            }
+        });
+    }
     ui.separator();
     egui::ScrollArea::vertical().show(ui, |ui| {
         for id in app.palette.elements_filtered() {
             let name = aura_lite_elements::registry::name_for_id(id);
             let color = aura_lite_elements::registry::color_for_id(id);
             let is_selected = app.palette.selected_id == id;
-            let btn_text = format!("{} ({})", name, id);
-            let mut btn = egui::Button::new(btn_text);
-            if is_selected {
-                btn = btn.fill(egui::Color32::from_rgb(80, 80, 200));
-            }
-            if ui.add(btn).clicked() {
-                app.set_selected_element(id);
-            }
-            // show color preview
+            let fav = app.palette.favorites.contains(&id);
             ui.horizontal(|ui| {
+                let star = if fav { "★" } else { "☆" };
+                if ui.small_button(star).clicked() {
+                    app.toggle_favorite(id);
+                }
+                let btn_text = format!("{} ({})", name, id);
+                let mut btn = egui::Button::new(btn_text);
+                if is_selected {
+                    btn = btn.fill(egui::Color32::from_rgb(80, 80, 200));
+                }
+                if ui.add(btn).clicked() {
+                    app.set_selected_element(id);
+                }
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                 ui.painter().rect_filled(
@@ -97,6 +129,21 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
     ui.label(format!("Fusion: {}", app.simulation.fusion_count));
     ui.label(format!("Decay: {}", app.simulation.decay_count));
     ui.label(format!("k-eff: {:.3}", app.simulation.k_effective));
+    ui.label(format!(
+        "Power: {:.2}  {}",
+        app.simulation.power,
+        app.simulation.reactor_status()
+    ));
+    if app.simulation.period_ticks.abs() > 0.5 {
+        ui.label(format!(
+            "Period: {:+.0} ticks",
+            app.simulation.period_ticks
+        ));
+    }
+    ui.label(format!(
+        "Iodine: {}   Xenon: {}",
+        app.simulation.iodine_count, app.simulation.xenon_count
+    ));
     ui.label(format!(
         "Neutron queue: {}",
         app.simulation.neutron_queue.len()
@@ -224,13 +271,13 @@ pub fn build_ui(ctx: &Context, app: &mut AppState) {
             .show(ctx, |ui| {
                 ui.label("Left click: paint   Right drag: pan   Wheel: zoom");
                 ui.label("Space pause · C clear · Z undo · H overlay · [ ] rods");
-                ui.label("S quick-save · F12 screenshot · 1-6 palette shortcuts");
+                ui.label("S quick-save · F12 screenshot · 1–0 hotbar · , . cycle · R record GIF");
                 ui.separator();
-                ui.label("Copy a rectangle, then Stamp it elsewhere. Temperature slider heats the brush.");
-                ui.label("Control rods soak neutrons without disappearing. Xenon is fission poison.");
-                ui.label("Steam / fire raise pressure and can burst pipes. Acid eats stone into slag.");
-                ui.label("Filters pass fluids (water, steam, acid) but stop powders and solids.");
-                ui.label("Load a scene from the right panel to try a reactor, pit, fire or coolant loop.");
+                ui.label("Copy a rectangle (yellow preview), then Stamp it (ghost preview).");
+                ui.label("Control rods soak neutrons; they slag if they overheat.");
+                ui.label("Iodine decays to xenon (poison pit). Sensors spark when the pile is critical.");
+                ui.label("Fire needs air and dies in water. Sparks travel along wire and fire pumps/heaters/TNT.");
+                ui.label("Steam pressure shoves fluids around the coolant loop.");
             });
     }
 }

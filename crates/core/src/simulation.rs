@@ -51,6 +51,21 @@ pub struct SimulationState {
     /// Approximate k-effective, refreshed every tick from live cell counts.
     #[serde(default)]
     pub k_effective: f32,
+    /// Smoothed fissions-per-tick — the "power" needle.
+    #[serde(default)]
+    pub power: f32,
+    /// Estimated doubling / e-folding time in ticks (0 = unknown).
+    #[serde(default)]
+    pub period_ticks: f32,
+    /// +1 rising, 0 holding, −1 dying.
+    #[serde(default)]
+    pub trend: i8,
+    #[serde(default)]
+    pub iodine_count: u32,
+    #[serde(default)]
+    pub xenon_count: u32,
+    #[serde(skip, default)]
+    fission_at_last_hud: u64,
     #[serde(skip, default)]
     pub chunk_pool: ChunkPool,
     #[serde(skip, default)]
@@ -73,6 +88,12 @@ impl SimulationState {
             fusion_count: 0,
             decay_count: 0,
             k_effective: 0.0,
+            power: 0.0,
+            period_ticks: 0.0,
+            trend: 0,
+            iodine_count: 0,
+            xenon_count: 0,
+            fission_at_last_hud: 0,
             chunk_pool: ChunkPool::new(width, height),
             velocities: VelocityField::new((width * height) as usize),
             pressure: PressureField::new((width * height) as usize),
@@ -151,6 +172,8 @@ impl SimulationState {
         let mut fissile = 0u32;
         let mut moderator = 0u32;
         let mut absorber = 0u32;
+        let mut iodine = 0u32;
+        let mut xenon = 0u32;
         let w = self.grid.width;
         let h = self.grid.height;
         let cs = CHUNK_SIZE as u32;
@@ -169,12 +192,48 @@ impl SimulationState {
                 if is_moderator(id) {
                     moderator += 1;
                 }
-                if matches!(id, BORON | CONTROL_ROD | XENON) {
+                if matches!(id, BORON | CONTROL_ROD | XENON | IODINE) {
                     absorber += 1;
+                }
+                if id == IODINE {
+                    iodine += 1;
+                }
+                if id == XENON {
+                    xenon += 1;
                 }
             }
         }
+        self.iodine_count = iodine;
+        self.xenon_count = xenon;
         self.k_effective = reactions::criticality_factor(fissile, moderator, absorber);
+        self.update_reactor_hud();
+    }
+
+    fn update_reactor_hud(&mut self) {
+        let df = self.fission_count.saturating_sub(self.fission_at_last_hud) as f32;
+        self.fission_at_last_hud = self.fission_count;
+        let prev = self.power;
+        self.power = prev * 0.82 + df * 0.18;
+        if self.power > prev * 1.08 && self.power > 0.05 {
+            self.trend = 1;
+            let ratio = (self.power / prev.max(0.01)).clamp(1.01, 4.0);
+            self.period_ticks = std::f32::consts::LN_2 / ratio.ln();
+        } else if self.power < prev * 0.92 && prev > 0.05 {
+            self.trend = -1;
+            let ratio = (prev / self.power.max(0.01)).clamp(1.01, 4.0);
+            self.period_ticks = -(std::f32::consts::LN_2 / ratio.ln());
+        } else {
+            self.trend = 0;
+        }
+    }
+
+    pub fn reactor_status(&self) -> &'static str {
+        match self.trend {
+            1 => "rising",
+            -1 => "dying",
+            _ if self.k_effective >= 0.95 => "holding",
+            _ => "subcritical",
+        }
     }
 
     pub fn tick(&mut self) {
@@ -240,7 +299,7 @@ impl SimulationState {
                         if is_fissile(id) {
                             fissile.push((x, y));
                         }
-                        if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON) {
+                        if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON | IODINE) {
                             decay.push((x, y));
                         }
                         if id == DEUTERIUM || id == TRITIUM {
@@ -380,7 +439,7 @@ impl SimulationState {
         let diff_rate = self.settings.temperature_diffusion_rate;
 
         let _ = (w, h, total);
-        physics::diffuse_heat(&mut self.grid, diff_rate);
+        physics::diffuse_heat_active(&mut self.grid, diff_rate, Some(&self.chunk_pool));
         physics::apply_phase_changes(&mut self.grid, rng);
         self.apply_thermal_effects(rng);
     }
@@ -468,8 +527,8 @@ impl SimulationState {
                     } else if let Some(target) = self.grid.get_mut(x, y) {
                         target.temperature = target.temperature.saturating_add(20);
                     }
-                } else if matches!(cell_id, BORON | CONTROL_ROD | XENON) {
-                    if rng.f32() < reactions::absorber_chance(cell_id, ev.energy) {
+                } else if cell_id == BORON {
+                    if rng.f32() < reactions::absorber_chance(BORON, ev.energy) {
                         self.grid.set(x, y, Particle::new(FALLOUT, 500));
                         let ax = (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1)
                             as u32;
@@ -479,6 +538,16 @@ impl SimulationState {
                             self.grid
                                 .set(ax, ay, Particle::new(ALPHA, 400).with_lifetime(0));
                         }
+                    }
+                } else if cell_id == CONTROL_ROD {
+                    if rng.f32() < reactions::absorber_chance(CONTROL_ROD, ev.energy) {
+                        if let Some(rod) = self.grid.get_mut(x, y) {
+                            rod.temperature = rod.temperature.saturating_add(45);
+                        }
+                    }
+                } else if matches!(cell_id, XENON | IODINE) {
+                    if rng.f32() < reactions::absorber_chance(cell_id, ev.energy) {
+                        self.grid.set(x, y, Particle::air());
                     }
                 } else if cell_id == LITHIUM && rng.f32() < reactions::LITHIUM_BREED_CHANCE {
                     // Li-6 + n -> T + He (simplified single-cell breeding)
@@ -514,7 +583,12 @@ impl SimulationState {
         if !self.settings.gravity_enabled {
             return;
         }
-        physics::step(&mut self.grid, &mut self.velocities, rng);
+        physics::step_active(
+            &mut self.grid,
+            &mut self.velocities,
+            rng,
+            Some(&self.chunk_pool),
+        );
     }
 
     fn reaction_pass(&mut self, rng: &mut fastrand::Rng) {
@@ -551,7 +625,7 @@ impl SimulationState {
             if is_fissile(id) {
                 fissile_to_check.push((x, y));
             }
-            if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON) {
+            if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON | IODINE) {
                 decay_to_check.push((x, y));
             }
             if id == DEUTERIUM || id == TRITIUM {
@@ -585,7 +659,11 @@ impl SimulationState {
     }
 
     fn effects_pass(&mut self, rng: &mut fastrand::Rng) {
-        physics::diffuse_heat(&mut self.grid, self.settings.temperature_diffusion_rate);
+        physics::diffuse_heat_active(
+            &mut self.grid,
+            self.settings.temperature_diffusion_rate,
+            Some(&self.chunk_pool),
+        );
         physics::apply_phase_changes(&mut self.grid, rng);
         self.apply_thermal_effects(rng);
     }
@@ -624,7 +702,17 @@ impl SimulationState {
                 energy: NeutronEnergy::Fast,
             });
         }
-        if rng.f32() < 0.08 {
+        // Iodine pit: most poison is born as I-135 and later decays to Xe-135.
+        let roll = rng.f32();
+        if roll < 0.10 {
+            let dx = rng.i32(-1..=1);
+            let dy = rng.i32(-1..=1);
+            let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;
+            let ny = (y as i32 + dy).clamp(0, self.grid.height as i32 - 1) as u32;
+            if self.grid.get(nx, ny).unwrap().is_empty() {
+                self.grid.set(nx, ny, Particle::new(IODINE, 400));
+            }
+        } else if roll < 0.14 {
             let dx = rng.i32(-1..=1);
             let dy = rng.i32(-1..=1);
             let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;

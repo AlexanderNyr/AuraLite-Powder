@@ -294,7 +294,7 @@ fn test_element_registry_consistency() {
     // Ensure all element IDs have definitions
     for id in 0..=MAX_ELEMENT_ID {
         let def = aura_lite_elements::registry::get_definition(id);
-        if id <= FILTER {
+        if id <= IODINE {
             assert!(def.is_some(), "Element {} should have a definition", id);
         }
     }
@@ -577,4 +577,76 @@ fn test_sensor_heats_with_criticality() {
         sim.grid.get(8, 8).unwrap().temperature > 293,
         "sensor should warm when the pile is active"
     );
+}
+
+#[test]
+fn test_iodine_decays_toward_xenon() {
+    assert_eq!(
+        aura_lite_core::reactions::decay_daughter(IODINE),
+        XENON
+    );
+    let mut saw = false;
+    for seed in 0..8 {
+        let mut sim = SimulationState::new(10, 10, seed);
+        for y in 2..8 {
+            for x in 2..8 {
+                sim.grid.set(x, y, Particle::new(IODINE, 320));
+            }
+        }
+        for _ in 0..900 {
+            sim.tick();
+        }
+        if sim.decay_count > 0
+            || sim
+                .grid
+                .particles
+                .iter()
+                .any(|p| p.element_id == XENON)
+        {
+            saw = true;
+            break;
+        }
+    }
+    assert!(saw, "a patch of iodine should produce xenon");
+}
+
+#[test]
+fn test_fire_dies_underwater() {
+    let mut sim = SimulationState::new(10, 10, 1);
+    for x in 0..10 {
+        for y in 0..10 {
+            sim.grid.set(x, y, Particle::new(WATER, 293));
+        }
+    }
+    sim.grid.set(5, 5, Particle::new(FIRE, 1100));
+    for _ in 0..20 {
+        sim.tick();
+    }
+    let fire = sim
+        .grid
+        .particles
+        .iter()
+        .filter(|p| p.element_id == FIRE)
+        .count();
+    assert_eq!(fire, 0, "fire should extinguish when fully flooded");
+}
+
+#[test]
+fn test_reactor_hud_fields_exist() {
+    let mut sim = SimulationState::new(16, 16, 0);
+    sim.load_scenario(aura_lite_core::Scenario::ControlledReactor);
+    for _ in 0..5 {
+        sim.tick();
+    }
+    let _ = sim.reactor_status();
+    let _ = sim.power;
+    let _ = sim.iodine_count;
+}
+
+#[test]
+fn test_gif_encoder_writes_header() {
+    let frame = vec![255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255];
+    let bytes = aura_lite_io::gif89a::encode_rgba_frames(&[frame], 2, 2, 5).unwrap();
+    assert!(bytes.starts_with(b"GIF89a"));
+    assert_eq!(*bytes.last().unwrap(), 0x3B);
 }

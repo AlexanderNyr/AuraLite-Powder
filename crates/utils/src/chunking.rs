@@ -108,4 +108,29 @@ impl ChunkPool {
             .map(|m| (m.x, m.y))
             .collect()
     }
+
+    /// Active chunks plus a `halo` ring so particles can fall into empty neighbours.
+    pub fn expanded_active(&self, halo: i32) -> Vec<(u32, u32)> {
+        use std::collections::BTreeSet;
+        let mut set = BTreeSet::new();
+        for m in &self.metas {
+            if !(m.active || !m.is_empty) {
+                continue;
+            }
+            for dy in -halo..=halo {
+                for dx in -halo..=halo {
+                    let cx = m.x as i32 + dx;
+                    let cy = m.y as i32 + dy;
+                    if cx >= 0
+                        && cy >= 0
+                        && (cx as u32) < self.chunks_x
+                        && (cy as u32) < self.chunks_y
+                    {
+                        set.insert((cx as u32, cy as u32));
+                    }
+                }
+            }
+        }
+        set.into_iter().collect()
+    }
 }

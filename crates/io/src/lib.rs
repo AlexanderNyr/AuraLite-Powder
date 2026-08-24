@@ -1,6 +1,7 @@
 //! IO crate - save/load, serialization, compression
 
 pub mod error;
+pub mod gif89a;
 pub mod save;
 
 pub use aura_lite_core::simulation::SimulationSettings;

@@ -140,6 +140,30 @@ impl WasmSimulation {
         self.inner.sim.k_effective
     }
 
+    pub fn power(&self) -> f32 {
+        self.inner.sim.power
+    }
+
+    pub fn reactor_status(&self) -> String {
+        self.inner.sim.reactor_status().to_string()
+    }
+
+    pub fn iodine_count(&self) -> u32 {
+        self.inner.sim.iodine_count
+    }
+
+    pub fn xenon_count(&self) -> u32 {
+        self.inner.sim.xenon_count
+    }
+
+    pub fn shift_rods(&mut self, dy: i32) {
+        self.inner.sim.shift_control_rods(dy);
+    }
+
+    pub fn undo_clear_ok(&self) -> bool {
+        true
+    }
+
     pub fn load_scene(&mut self, name: &str) {
         let scene = match name {
             "reactor" => aura_lite_core::Scenario::Reactor,

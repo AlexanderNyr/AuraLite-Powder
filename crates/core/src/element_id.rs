@@ -45,6 +45,7 @@ pub const SLAG: u16 = 41;
 pub const COAL: u16 = 42;
 pub const SPARK: u16 = 43;
 pub const FILTER: u16 = 44;
+pub const IODINE: u16 = 45;
 
 pub const MAX_ELEMENT_ID: u16 = 47;
 
@@ -73,7 +74,7 @@ pub fn kind_for_id(id: u16) -> ElementKind {
         | PIPE | SENSOR | CONTROL_ROD | FILTER => ElementKind::Solid,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
         | TNT | SLAG | COAL => ElementKind::Sand,
-        TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM | XENON => ElementKind::Gas,
+        TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM | XENON | IODINE => ElementKind::Gas,
         MOLTEN_FUEL => ElementKind::Molten,
         FIRE | SPARK => ElementKind::Radiation,
         NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA => ElementKind::Radiation,
@@ -123,6 +124,7 @@ pub fn density_for_id(id: u16) -> f32 {
         COAL => 1.3,
         SPARK => 0.001,
         FILTER => 4.5,
+        IODINE => 0.05,
         NEUTRON_THERMAL => 0.001,
         NEUTRON_FAST => 0.001,
         GAMMA => 0.0,
@@ -152,7 +154,7 @@ pub fn is_liquid(id: u16) -> bool {
 }
 
 pub fn is_gas(id: u16) -> bool {
-    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM | XENON | FIRE)
+    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM | XENON | FIRE | IODINE)
 }
 
 /// Immovable structural material (walls, shielding, devices).
@@ -204,7 +206,7 @@ pub fn flow_steps(id: u16) -> u32 {
         WATER | ACID => 4,
         HEAVY_WATER => 3,
         MOLTEN_FUEL => 1,
-        STEAM | HYDROGEN | HELIUM | FIRE | XENON => 3,
+        STEAM | HYDROGEN | HELIUM | FIRE | XENON | IODINE => 3,
         TRITIUM | DEUTERIUM => 2,
         _ => 0,
     }
@@ -234,7 +236,7 @@ pub fn conductivity(id: u16) -> f32 {
         LEAD => 0.30,
         PIPE | PUMP | SENSOR | FILTER => 0.18,
         ACID => 0.12,
-        FIRE | XENON => 0.04,
+        FIRE | XENON | IODINE => 0.04,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | MOLTEN_FUEL => 0.16,
         _ => 0.05,
     }

@@ -28,6 +28,9 @@ impl Default for SimulationController {
 pub struct PalettePanel {
     pub selected_id: u16,
     pub search_query: String,
+    /// Keys 1–0 pick these ten slots.
+    pub hotbar: [u16; 10],
+    pub favorites: Vec<u16>,
 }
 
 impl Default for PalettePanel {
@@ -35,6 +38,8 @@ impl Default for PalettePanel {
         Self {
             selected_id: 1,
             search_query: String::new(),
+            hotbar: [1, 2, 4, 13, 21, 20, 32, 33, 34, 40],
+            favorites: vec![1, 2, 4, 32, 40],
         }
     }
 }
@@ -132,6 +137,12 @@ pub struct AppState {
     pub show_tutorial: bool,
     undo: Vec<Vec<Particle>>,
     pub clipboard: Vec<(i32, i32, Particle)>,
+    /// World-space drag rectangle while copy/rect is held.
+    pub drag_rect: Option<(i32, i32, i32, i32)>,
+    pub recording: bool,
+    pub rec_frames: Vec<Vec<u8>>,
+    pub rec_w: u32,
+    pub rec_h: u32,
 }
 
 pub struct GridView {
@@ -170,6 +181,11 @@ impl AppState {
             show_tutorial: true,
             undo: Vec::new(),
             clipboard: Vec::new(),
+            drag_rect: None,
+            recording: false,
+            rec_frames: Vec::new(),
+            rec_w: 0,
+            rec_h: 0,
         }
     }
 

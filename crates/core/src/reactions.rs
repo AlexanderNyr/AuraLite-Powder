@@ -87,6 +87,7 @@ pub fn half_life_ticks(element_id: u16) -> u64 {
         PU240 => 400_000,
         TRITIUM => 100_000,
         XENON => 8_000,
+        IODINE => 2_400,
         _ => 0,
     }
 }
@@ -99,6 +100,7 @@ pub fn decay_daughter(element_id: u16) -> u16 {
         PU240 => PU239,
         TRITIUM => HELIUM,
         XENON => AIR,
+        IODINE => XENON,
         _ => FALLOUT,
     }
 }
@@ -107,7 +109,7 @@ pub fn decay_radiation(element_id: u16) -> u16 {
     match element_id {
         U235 | U238 | PU239 | PU240 => ALPHA,
         TRITIUM => BETA,
-        XENON => AIR, // poison just fades, no extra radiation
+        XENON | IODINE => AIR, // poison chain, no extra radiation
         _ => GAMMA,
     }
 }
@@ -211,5 +213,13 @@ mod tests {
                 > absorber_chance(BORON, NeutronEnergy::Thermal)
         );
         assert!(absorber_chance(XENON, NeutronEnergy::Thermal) > 0.9);
+    }
+
+    #[test]
+    fn iodine_decays_to_xenon() {
+        assert_eq!(decay_daughter(IODINE), XENON);
+        assert_eq!(decay_radiation(IODINE), AIR);
+        assert!(half_life_ticks(IODINE) < half_life_ticks(XENON));
+        assert!(absorber_chance(IODINE, NeutronEnergy::Thermal) < absorber_chance(XENON, NeutronEnergy::Thermal));
     }
 }

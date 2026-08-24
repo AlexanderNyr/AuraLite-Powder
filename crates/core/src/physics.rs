@@ -52,6 +52,16 @@ impl VelocityField {
 }
 
 pub fn step(grid: &mut Grid, vel: &mut VelocityField, rng: &mut fastrand::Rng) {
+    step_active(grid, vel, rng, None);
+}
+
+/// Step only occupied chunks (plus a 1-chunk halo) when a pool is supplied.
+pub fn step_active(
+    grid: &mut Grid,
+    vel: &mut VelocityField,
+    rng: &mut fastrand::Rng,
+    pool: Option<&crate::chunk::ChunkPool>,
+) {
     let len = grid.particles.len();
     vel.sync_len(len);
     for p in &mut grid.particles {
@@ -62,6 +72,37 @@ pub fn step(grid: &mut Grid, vel: &mut VelocityField, rng: &mut fastrand::Rng) {
     let w = grid.width;
     let h = grid.height;
     if w == 0 || h == 0 {
+        return;
+    }
+
+    if let Some(pool) = pool {
+        let chunks = pool.expanded_active(1);
+        if chunks.is_empty() {
+            return;
+        }
+        let cs = crate::chunk::CHUNK_SIZE as u32;
+        let mut rows: Vec<Vec<u32>> = vec![Vec::new(); h as usize];
+        for &(cx, cy) in &chunks {
+            let x0 = cx * cs;
+            let y0 = cy * cs;
+            let x1 = (x0 + cs).min(w);
+            let y1 = (y0 + cs).min(h);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    rows[y as usize].push(x);
+                }
+            }
+        }
+        for y in (0..h).rev() {
+            let xs = &mut rows[y as usize];
+            if xs.is_empty() {
+                continue;
+            }
+            shuffle_row(xs, rng);
+            for &x in xs.iter() {
+                update_cell(grid, vel, x, y, rng);
+            }
+        }
         return;
     }
 
@@ -531,12 +572,40 @@ fn heading_to_flags(flags: u8, dx: i32, dy: i32) -> u8 {
 
 /// Conductivity-weighted Jacobi heat step + ambient leak.
 pub fn diffuse_heat(grid: &mut Grid, rate: f32) {
+    diffuse_heat_active(grid, rate, None);
+}
+
+pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chunk::ChunkPool>) {
     let w = grid.width;
     let h = grid.height;
     let mut next = vec![0u16; grid.particles.len()];
+    let mut mask = vec![true; grid.particles.len()];
+    if let Some(pool) = pool {
+        let chunks = pool.expanded_active(1);
+        if chunks.is_empty() {
+            return;
+        }
+        mask.fill(false);
+        let cs = crate::chunk::CHUNK_SIZE as u32;
+        for &(cx, cy) in &chunks {
+            let x0 = cx * cs;
+            let y0 = cy * cs;
+            let x1 = (x0 + cs).min(w);
+            let y1 = (y0 + cs).min(h);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    mask[grid.index(x, y)] = true;
+                }
+            }
+        }
+    }
     for y in 0..h {
         for x in 0..w {
             let idx = grid.index(x, y);
+            if !mask[idx] {
+                next[idx] = grid.particles[idx].temperature;
+                continue;
+            }
             let cur = grid.particles[idx];
             let k0 = conductivity(cur.element_id);
             let t0 = cur.temperature as f32;
@@ -561,7 +630,9 @@ pub fn diffuse_heat(grid: &mut Grid, rate: f32) {
         }
     }
     for (i, t) in next.into_iter().enumerate() {
-        grid.particles[i].temperature = t;
+        if mask[i] {
+            grid.particles[i].temperature = t;
+        }
     }
 }
 
