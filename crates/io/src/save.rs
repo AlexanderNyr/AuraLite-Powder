@@ -30,6 +30,14 @@ pub struct SaveFile {
     pub fusion_count: u64,
     #[serde(default)]
     pub decay_count: u64,
+    #[serde(default)]
+    pub vel_x: Vec<i8>,
+    #[serde(default)]
+    pub vel_y: Vec<i8>,
+    #[serde(default)]
+    pub pressure: Vec<u16>,
+    #[serde(default)]
+    pub power: f32,
 }
 
 /// On-disk layout used by version-1 `.aura` files (no simulation counters).
@@ -64,6 +72,10 @@ impl From<SaveFileV1> for SaveFile {
             fission_count: 0,
             fusion_count: 0,
             decay_count: 0,
+            vel_x: Vec::new(),
+            vel_y: Vec::new(),
+            pressure: Vec::new(),
+            power: 0.0,
         }
     }
 }
@@ -100,6 +112,10 @@ impl SaveFile {
             fission_count: 0,
             fusion_count: 0,
             decay_count: 0,
+            vel_x: Vec::new(),
+            vel_y: Vec::new(),
+            pressure: Vec::new(),
+            power: 0.0,
         }
     }
 
@@ -111,6 +127,10 @@ impl SaveFile {
         save.fission_count = sim.fission_count;
         save.fusion_count = sim.fusion_count;
         save.decay_count = sim.decay_count;
+        save.vel_x = sim.velocities.vx.clone();
+        save.vel_y = sim.velocities.vy.clone();
+        save.pressure = sim.pressure.p.clone();
+        save.power = sim.power;
         save
     }
 
@@ -146,6 +166,17 @@ impl SaveFile {
         sim.fission_count = self.fission_count;
         sim.fusion_count = self.fusion_count;
         sim.decay_count = self.decay_count;
+        sim.power = self.power;
+        let n = sim.grid.particles.len();
+        sim.velocities.sync_len(n);
+        if self.vel_x.len() == n && self.vel_y.len() == n {
+            sim.velocities.vx = self.vel_x.clone();
+            sim.velocities.vy = self.vel_y.clone();
+        }
+        sim.pressure.sync_len(n);
+        if self.pressure.len() == n {
+            sim.pressure.p = self.pressure.clone();
+        }
         sim.chunk_pool = aura_lite_core::ChunkPool::new(sim.grid.width, sim.grid.height);
         Ok(())
     }

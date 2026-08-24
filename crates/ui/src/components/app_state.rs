@@ -1,5 +1,5 @@
 use crate::brush::BrushSettings;
-use aura_lite_core::{Particle, Scenario, SimulationState};
+use aura_lite_core::{Mission, MissionId, Particle, Scenario, SimulationState};
 use aura_lite_renderer::{Camera, OverlayMode};
 use serde::{Deserialize, Serialize};
 
@@ -143,6 +143,8 @@ pub struct AppState {
     pub rec_frames: Vec<Vec<u8>>,
     pub rec_w: u32,
     pub rec_h: u32,
+    pub mission: Option<Mission>,
+    pub tutorial_step: u8,
 }
 
 pub struct GridView {
@@ -186,6 +188,8 @@ impl AppState {
             rec_frames: Vec::new(),
             rec_w: 0,
             rec_h: 0,
+            mission: None,
+            tutorial_step: 0,
         }
     }
 
@@ -253,4 +257,93 @@ impl AppState {
         self.palette.selected_id = id;
         self.tools.brush.selected_element = id;
     }
+
+    pub fn select_hotbar(&mut self, slot: usize) {
+        if let Some(&id) = self.palette.hotbar.get(slot) {
+            self.set_selected_element(id);
+        }
+    }
+
+    pub fn cycle_hotbar(&mut self, dir: i32) {
+        let cur = self.palette.selected_id;
+        let idx = self
+            .palette
+            .hotbar
+            .iter()
+            .position(|&id| id == cur)
+            .unwrap_or(0);
+        let n = self.palette.hotbar.len() as i32;
+        let next = ((idx as i32 + dir).rem_euclid(n)) as usize;
+        self.select_hotbar(next);
+    }
+
+    pub fn toggle_favorite(&mut self, id: u16) {
+        if let Some(i) = self.palette.favorites.iter().position(|&x| x == id) {
+            self.palette.favorites.remove(i);
+        } else {
+            self.palette.favorites.push(id);
+        }
+    }
+
+    pub fn push_rec_frame(&mut self, rgba: &[u8], w: u32, h: u32) {
+        if !self.recording {
+            return;
+        }
+        if self.rec_frames.len() >= 90 {
+            return;
+        }
+        let (out, ow, oh) = if w > 320 {
+            downsample_rgba(rgba, w, h, 320)
+        } else {
+            (rgba.to_vec(), w, h)
+        };
+        self.rec_w = ow;
+        self.rec_h = oh;
+        self.rec_frames.push(out);
+    }
+
+    pub fn start_mission(&mut self, id: MissionId) {
+        self.push_undo();
+        self.mission = Some(Mission::start(&mut self.simulation, id));
+    }
+
+    pub fn resize_grid(&mut self, w: u32, h: u32) {
+        self.push_undo();
+        self.simulation.resize(w, h);
+        self.controller.grid_width = w;
+        self.controller.grid_height = h;
+        self.simulation.setup_reactor_demo();
+    }
+
+    pub fn bump_radius(&mut self, delta: i32) {
+        let r = self.tools.brush.radius as i32 + delta;
+        self.tools.brush.radius = r.clamp(1, 20) as u32;
+    }
+
+    pub fn advance_tutorial(&mut self) {
+        if self.tutorial_step < 5 {
+            self.tutorial_step += 1;
+        } else {
+            self.show_tutorial = false;
+        }
+    }
+}
+
+fn downsample_rgba(src: &[u8], w: u32, h: u32, max_w: u32) -> (Vec<u8>, u32, u32) {
+    let scale = (w as f32 / max_w as f32).ceil().max(1.0) as u32;
+    let nw = (w / scale).max(1);
+    let nh = (h / scale).max(1);
+    let mut out = vec![0u8; (nw * nh * 4) as usize];
+    for y in 0..nh {
+        for x in 0..nw {
+            let sx = (x * scale).min(w - 1) as usize;
+            let sy = (y * scale).min(h - 1) as usize;
+            let si = (sy * w as usize + sx) * 4;
+            let di = ((y * nw + x) * 4) as usize;
+            if si + 3 < src.len() {
+                out[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            }
+        }
+    }
+    (out, nw, nh)
 }

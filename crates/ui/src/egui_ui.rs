@@ -15,7 +15,8 @@ pub fn show_palette(ui: &mut Ui, app: &mut AppState) {
     });
     ui.label("Hotbar 1–0  (comma/period cycle)");
     ui.horizontal_wrapped(|ui| {
-        for (i, &id) in app.palette.hotbar.iter().enumerate() {
+        let hotbar = app.palette.hotbar;
+        for (i, &id) in hotbar.iter().enumerate() {
             let name = aura_lite_elements::registry::name_for_id(id);
             let key = if i == 9 { 0 } else { i + 1 };
             let label = format!("{key}:{name}");
@@ -140,10 +141,15 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
             app.simulation.period_ticks
         ));
     }
-    ui.label(format!(
-        "Iodine: {}   Xenon: {}",
+    ui.label("Poison (I → Xe)");
+    let poison = (app.simulation.iodine_count as f32 * 0.4
+        + app.simulation.xenon_count as f32)
+        .min(80.0)
+        / 80.0;
+    ui.add(egui::ProgressBar::new(poison).text(format!(
+        "I {}  Xe {}",
         app.simulation.iodine_count, app.simulation.xenon_count
-    ));
+    )));
     ui.label(format!(
         "Neutron queue: {}",
         app.simulation.neutron_queue.len()
@@ -193,6 +199,26 @@ pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
         if ui.button("Help").clicked() {
             app.show_tutorial = !app.show_tutorial;
         }
+        let rec = if app.recording { "Stop rec" } else { "Rec GIF" };
+        if ui.button(rec).clicked() {
+            app.recording = !app.recording;
+            if app.recording {
+                app.rec_frames.clear();
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label("Grid:");
+        if ui.button("256").clicked() {
+            app.resize_grid(256, 256);
+        }
+        if ui.button("512").clicked() {
+            app.resize_grid(512, 512);
+        }
+        ui.label(format!(
+            "{}×{}",
+            app.simulation.grid.width, app.simulation.grid.height
+        ));
     });
     ui.separator();
     ui.label("Scenes");
@@ -203,6 +229,26 @@ pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
             }
         }
     });
+    ui.separator();
+    ui.label("Missions");
+    ui.horizontal_wrapped(|ui| {
+        for &id in aura_lite_core::MissionId::all() {
+            if ui.button(id.title()).clicked() {
+                app.start_mission(id);
+            }
+        }
+    });
+    if let Some(m) = &app.mission {
+        let color = match m.status {
+            aura_lite_core::MissionStatus::Won => egui::Color32::from_rgb(80, 200, 80),
+            aura_lite_core::MissionStatus::Failed => egui::Color32::from_rgb(220, 70, 70),
+            aura_lite_core::MissionStatus::Running => egui::Color32::from_rgb(220, 200, 80),
+        };
+        ui.colored_label(color, &m.message);
+    }
+    if app.mission.is_some() && ui.button("Abandon mission").clicked() {
+        app.mission = None;
+    }
 }
 
 #[cfg(feature = "native-ui")]
@@ -265,19 +311,30 @@ pub fn build_ui(ctx: &Context, app: &mut AppState) {
         ui.heading("AuraLite Powder - Nuclear Falling Sand");
     });
     if app.show_tutorial {
+        let step = app.tutorial_step;
+        let mut next = false;
+        let mut skip = false;
         egui::Window::new("How to play")
-            .open(&mut app.show_tutorial)
-            .default_width(420.0)
+            .default_width(440.0)
             .show(ctx, |ui| {
-                ui.label("Left click: paint   Right drag: pan   Wheel: zoom");
-                ui.label("Space pause · C clear · Z undo · H overlay · [ ] rods");
-                ui.label("S quick-save · F12 screenshot · 1–0 hotbar · , . cycle · R record GIF");
+                ui.label(format!("Step {} / 5", step + 1));
                 ui.separator();
-                ui.label("Copy a rectangle (yellow preview), then Stamp it (ghost preview).");
-                ui.label("Control rods soak neutrons; they slag if they overheat.");
-                ui.label("Iodine decays to xenon (poison pit). Sensors spark when the pile is critical.");
-                ui.label("Fire needs air and dies in water. Sparks travel along wire and fire pumps/heaters/TNT.");
-                ui.label("Steam pressure shoves fluids around the coolant loop.");
+                match step {
+                    0 => { ui.label("Paint sand with hotbar key 1. Scroll-zoom, right-drag to pan."); }
+                    1 => { ui.label("Space pauses. C clears, Z undoes."); }
+                    2 => { ui.label("Load Bare reactor. Watch k-eff and the poison bar."); }
+                    3 => { ui.label("[ ] move rods. Try the Hold critical mission."); }
+                    4 => { ui.label("H overlay. Copy/Stamp. R records GIF. - / = brush size."); }
+                    _ => { ui.label("Missions and 256/512 grid are on the right."); }
+                }
+                ui.separator();
+                if ui.button("Next").clicked() { next = true; }
+                if ui.button("Skip").clicked() { skip = true; }
             });
+        if next {
+            if app.tutorial_step < 5 { app.tutorial_step += 1; }
+            else { app.show_tutorial = false; }
+        }
+        if skip { app.show_tutorial = false; }
     }
 }

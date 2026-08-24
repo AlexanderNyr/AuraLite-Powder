@@ -157,7 +157,6 @@ impl WgpuBackend {
                 depth_or_array_layers: 1,
             },
         );
-        let _ = self.present_offscreen();
     }
 
     /// Fullscreen-triangle blit into an off-screen target (same pass a swapchain would use).

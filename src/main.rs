@@ -146,6 +146,7 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
     let mut right_mouse_down = false;
     let mut last_mouse_pos = Vec2::new(0.0, 0.0);
     let mut line_start: Option<(i32, i32)> = None;
+    let mut last_grid_w = GRID_WIDTH;
 
     let mut last_tick = Instant::now();
     let mut fps_accum = 0u32;
@@ -391,6 +392,15 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 }
             }
             Event::AboutToWait => {
+                let gw = app_state.simulation.grid.width;
+                if gw != last_grid_w {
+                    last_grid_w = gw;
+                    let sz = window_clone.inner_size();
+                    let gh = app_state.simulation.grid.height;
+                    camera.scale = (sz.width as f32 / gw as f32)
+                        .min(sz.height as f32 / gh as f32)
+                        .max(0.4);
+                }
                 let now = Instant::now();
                 let dt = now.duration_since(last_tick);
                 last_tick = now;
@@ -399,14 +409,9 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 while tick_accumulator >= target_tick {
                     if !app_state.controller.paused {
                         app_state.simulation.tick();
-                    }
-                    if app_state.recording {
-                        let buf = aura_lite_renderer::render_grid_with_glow(&app_state.simulation);
-                        app_state.push_rec_frame(
-                            &buf,
-                            app_state.simulation.grid.width,
-                            app_state.simulation.grid.height,
-                        );
+                        if let Some(m) = app_state.mission.as_mut() {
+                            m.tick(&app_state.simulation);
+                        }
                     }
                     tick_accumulator -= target_tick;
                 }
@@ -501,6 +506,10 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                             full_output.platform_output,
                         );
                     }
+                }
+                if app_state.recording && fps_accum % 2 == 0 {
+                    let frame = pixels.frame();
+                    app_state.push_rec_frame(frame, sz.width, sz.height);
                 }
                 if let Err(e) = pixels.render() {
                     log::error!("pixels render error: {}", e);

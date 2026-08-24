@@ -248,6 +248,7 @@ impl SimulationState {
             &mut self.pressure,
             &mut rng,
             self.k_effective,
+            Some(&self.chunk_pool),
         );
 
         let total_cells = self.grid.width as usize * self.grid.height as usize;

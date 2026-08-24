@@ -644,6 +644,65 @@ fn test_reactor_hud_fields_exist() {
 }
 
 #[test]
+fn test_mission_filter_rescue_can_win() {
+    let mut sim = SimulationState::new(32, 32, 1);
+    let mut mission = aura_lite_core::Mission::start(
+        &mut sim,
+        aura_lite_core::MissionId::FilterRescue,
+    );
+    for _ in 0..200 {
+        sim.tick();
+        mission.tick(&sim);
+        if mission.status != aura_lite_core::MissionStatus::Running {
+            break;
+        }
+    }
+    assert_ne!(
+        mission.status,
+        aura_lite_core::MissionStatus::Failed,
+        "{}",
+        mission.message
+    );
+}
+
+#[test]
+fn test_pressure_stays_inside_stone_box() {
+    let mut sim = SimulationState::new(16, 16, 1);
+    for x in 4..12 {
+        sim.grid.set(x, 4, Particle::new(STONE, 293));
+        sim.grid.set(x, 11, Particle::new(STONE, 293));
+    }
+    for y in 4..12 {
+        sim.grid.set(4, y, Particle::new(STONE, 293));
+        sim.grid.set(11, y, Particle::new(STONE, 293));
+    }
+    sim.grid.set(7, 7, Particle::new(STEAM, 450));
+    sim.grid.set(8, 7, Particle::new(STEAM, 450));
+    for _ in 0..30 {
+        sim.tick();
+    }
+    let outside = sim.pressure.p[sim.grid.index(2, 2)];
+    let inside = sim.pressure.p[sim.grid.index(7, 8)];
+    assert!(
+        outside < 12,
+        "pressure leaked through stone: outside={outside} inside={inside}"
+    );
+}
+
+#[test]
+fn test_save_restores_pressure() {
+    let mut sim = SimulationState::new(12, 12, 3);
+    sim.pressure.p[20] = 77;
+    sim.velocities.vx[20] = 2;
+    let bytes = aura_lite_io::save_simulation_to_bytes(&sim, false).unwrap();
+    let save = aura_lite_io::load_save_from_bytes(&bytes, false).unwrap();
+    let mut loaded = SimulationState::new(12, 12, 0);
+    save.apply_to(&mut loaded).unwrap();
+    assert_eq!(loaded.pressure.p[20], 77);
+    assert_eq!(loaded.velocities.vx[20], 2);
+}
+
+#[test]
 fn test_gif_encoder_writes_header() {
     let frame = vec![255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255];
     let bytes = aura_lite_io::gif89a::encode_rgba_frames(&[frame], 2, 2, 5).unwrap();

@@ -27,6 +27,7 @@ pub fn step_devices(
     pressure: &mut PressureField,
     rng: &mut fastrand::Rng,
     k_eff: f32,
+    pool: Option<&crate::chunk::ChunkPool>,
 ) {
     let w = grid.width;
     let h = grid.height;
@@ -34,50 +35,73 @@ pub fn step_devices(
     pressure.sync_len(len);
     vel.sync_len(len);
 
-    // Snapshot so we don't chain-react the whole grid in one pass.
     let ids: Vec<u16> = grid.particles.iter().map(|p| p.element_id).collect();
     let lives: Vec<u8> = grid.particles.iter().map(|p| p.lifetime).collect();
 
-    for y in 0..h {
-        for x in 0..w {
-            let i = (y * w + x) as usize;
-            match ids[i] {
-                HEATER => heat_around(grid, x, y, 18),
-                PUMP => pump_fluid(grid, vel, x, y),
-                FIRE => {
-                    pressure.p[i] = pressure.p[i].saturating_add(3);
-                    tick_fire(grid, pressure, x, y, rng);
-                }
-                ACID => tick_acid(grid, x, y, rng),
-                WOOD | COAL => {
-                    if grid.particles[i].temperature > 650 && rng.f32() < 0.08 {
-                        grid.set(x, y, Particle::new(FIRE, grid.particles[i].temperature));
+    let cells: Vec<(u32, u32)> = if let Some(pool) = pool {
+        let chunks = pool.expanded_active(1);
+        if chunks.is_empty() {
+            Vec::new()
+        } else {
+            let cs = crate::chunk::CHUNK_SIZE as u32;
+            let mut out = Vec::new();
+            for &(cx, cy) in &chunks {
+                let x0 = cx * cs;
+                let y0 = cy * cs;
+                let x1 = (x0 + cs).min(w);
+                let y1 = (y0 + cs).min(h);
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        out.push((x, y));
                     }
                 }
-                HYDROGEN => {
-                    if grid.particles[i].temperature > 750 && rng.f32() < 0.04 {
-                        grid.set(x, y, Particle::new(FIRE, 1200));
-                        pressure.p[i] = pressure.p[i].saturating_add(20);
-                    }
-                }
-                SPARK => tick_spark(grid, x, y, rng),
-                WIRE => tick_wire(grid, vel, x, y, lives[i], rng),
-                SENSOR => tick_sensor(grid, x, y, k_eff, rng),
-                FILTER => tick_filter(grid, vel, x, y),
-                CONTROL_ROD => {
-                    if grid.particles[i].temperature > 1600 && rng.f32() < 0.06 {
-                        grid.set(x, y, Particle::new(SLAG, grid.particles[i].temperature));
-                    }
-                }
-                STEAM => {
-                    pressure.p[i] = pressure.p[i].saturating_add(6);
-                }
-                _ => {}
             }
+            out
+        }
+    } else {
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .collect()
+    };
+
+    for (x, y) in cells {
+        let i = (y * w + x) as usize;
+        match ids[i] {
+            HEATER => heat_around(grid, x, y, 18),
+            PUMP => pump_fluid(grid, vel, x, y),
+            FIRE => {
+                pressure.p[i] = pressure.p[i].saturating_add(3);
+                tick_fire(grid, pressure, x, y, rng);
+            }
+            ACID => tick_acid(grid, x, y, rng),
+            WOOD | COAL => {
+                if grid.particles[i].temperature > 650 && rng.f32() < 0.08 {
+                    grid.set(x, y, Particle::new(FIRE, grid.particles[i].temperature));
+                }
+            }
+            HYDROGEN => {
+                if grid.particles[i].temperature > 750 && rng.f32() < 0.04 {
+                    grid.set(x, y, Particle::new(FIRE, 1200));
+                    pressure.p[i] = pressure.p[i].saturating_add(20);
+                }
+            }
+            SPARK => tick_spark(grid, x, y, rng),
+            WIRE => tick_wire(grid, vel, x, y, lives[i], rng),
+            SENSOR => tick_sensor(grid, x, y, k_eff, rng),
+            FILTER => tick_filter(grid, vel, x, y),
+            CONTROL_ROD => {
+                if grid.particles[i].temperature > 1600 && rng.f32() < 0.06 {
+                    grid.set(x, y, Particle::new(SLAG, grid.particles[i].temperature));
+                }
+            }
+            STEAM => {
+                pressure.p[i] = pressure.p[i].saturating_add(6);
+            }
+            _ => {}
         }
     }
 
-    diffuse_pressure(pressure, w, h);
+    diffuse_pressure(grid, pressure, w, h);
     apply_pressure_flow(grid, vel, pressure, rng);
     apply_overpressure(grid, pressure, rng);
 }
@@ -416,11 +440,20 @@ fn tick_filter(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
     }
 }
 
-fn diffuse_pressure(pressure: &mut PressureField, w: u32, h: u32) {
+fn conducts_pressure(id: u16) -> bool {
+    id == FILTER || !is_static_solid(id)
+}
+
+fn diffuse_pressure(grid: &Grid, pressure: &mut PressureField, w: u32, h: u32) {
     let mut next = pressure.p.clone();
     for y in 0..h {
         for x in 0..w {
             let i = (y * w + x) as usize;
+            let id = grid.particles[i].element_id;
+            if !conducts_pressure(id) {
+                next[i] = pressure.p[i].saturating_sub(2);
+                continue;
+            }
             let mut acc = pressure.p[i] as u32;
             let mut n = 1u32;
             for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
@@ -429,7 +462,11 @@ fn diffuse_pressure(pressure: &mut PressureField, w: u32, h: u32) {
                 if nx < 0 || ny < 0 || nx >= w as i32 || ny >= h as i32 {
                     continue;
                 }
-                acc += pressure.p[(ny as u32 * w + nx as u32) as usize] as u32;
+                let j = (ny as u32 * w + nx as u32) as usize;
+                if !conducts_pressure(grid.particles[j].element_id) {
+                    continue;
+                }
+                acc += pressure.p[j] as u32;
                 n += 1;
             }
             next[i] = ((acc / n) as u16).saturating_sub(1);
