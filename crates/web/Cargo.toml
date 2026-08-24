@@ -12,6 +12,7 @@ default = ["web"]
 aura-lite-core = { path = "../core" }
 aura-lite-elements = { path = "../elements" }
 aura-lite-utils = { path = "../utils" }
+aura-lite-io = { path = "../io" }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", optional = true, features = [

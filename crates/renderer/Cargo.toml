@@ -13,7 +13,7 @@ default = ["softbuffer"]
 aura-lite-core = { path = "../core" }
 aura-lite-utils = { path = "../utils" }
 aura-lite-elements = { path = "../elements" }
-image = { version = "0.25", features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1.0", features = ["derive"] }
 pixels = { version = "0.15", optional = true }
 softbuffer = { version = "0.4", optional = true }

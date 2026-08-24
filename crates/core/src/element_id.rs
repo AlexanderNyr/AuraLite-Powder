@@ -31,8 +31,22 @@ pub const FALLOUT: u16 = 27;
 pub const BORON: u16 = 28; // neutron absorber
 pub const STEAM: u16 = 29;
 pub const ICE: u16 = 30;
+pub const XENON: u16 = 31;
+pub const FIRE: u16 = 32;
+pub const WOOD: u16 = 33;
+pub const ACID: u16 = 34;
+pub const WIRE: u16 = 35;
+pub const HEATER: u16 = 36;
+pub const PUMP: u16 = 37;
+pub const PIPE: u16 = 38;
+pub const SENSOR: u16 = 39;
+pub const CONTROL_ROD: u16 = 40;
+pub const SLAG: u16 = 41;
+pub const COAL: u16 = 42;
+pub const SPARK: u16 = 43;
+pub const FILTER: u16 = 44;
 
-pub const MAX_ELEMENT_ID: u16 = 31;
+pub const MAX_ELEMENT_ID: u16 = 47;
 
 pub fn is_valid_id(id: u16) -> bool {
     id <= MAX_ELEMENT_ID
@@ -54,13 +68,14 @@ pub fn kind_for_id(id: u16) -> ElementKind {
     match id {
         AIR => ElementKind::Air,
         SAND => ElementKind::Sand,
-        WATER | HEAVY_WATER => ElementKind::Liquid,
-        STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON => ElementKind::Solid,
+        WATER | HEAVY_WATER | ACID => ElementKind::Liquid,
+        STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
+        | PIPE | SENSOR | CONTROL_ROD | FILTER => ElementKind::Solid,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
-        | TNT => ElementKind::Solid,
-        TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM => ElementKind::Gas,
+        | TNT | SLAG | COAL => ElementKind::Sand,
+        TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM | XENON => ElementKind::Gas,
         MOLTEN_FUEL => ElementKind::Molten,
-        ICE => ElementKind::Solid,
+        FIRE | SPARK => ElementKind::Radiation,
         NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA => ElementKind::Radiation,
         _ => ElementKind::Air,
     }
@@ -94,6 +109,20 @@ pub fn density_for_id(id: u16) -> f32 {
         FALLOUT => 2.0,
         STEAM => 0.05,
         ICE => 0.92,
+        XENON => 0.06,
+        FIRE => 0.02,
+        WOOD => 0.7,
+        ACID => 1.2,
+        WIRE => 8.0,
+        HEATER => 7.5,
+        PUMP => 6.0,
+        PIPE => 5.5,
+        SENSOR => 4.0,
+        CONTROL_ROD => 2.5,
+        SLAG => 3.2,
+        COAL => 1.3,
+        SPARK => 0.001,
+        FILTER => 4.5,
         NEUTRON_THERMAL => 0.001,
         NEUTRON_FAST => 0.001,
         GAMMA => 0.0,
@@ -112,20 +141,27 @@ pub fn is_moderator(id: u16) -> bool {
 }
 
 pub fn is_radiation(id: u16) -> bool {
-    matches!(id, NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA)
+    matches!(
+        id,
+        NEUTRON_THERMAL | NEUTRON_FAST | GAMMA | ALPHA | BETA | SPARK
+    )
 }
 
 pub fn is_liquid(id: u16) -> bool {
-    matches!(id, WATER | HEAVY_WATER | MOLTEN_FUEL)
+    matches!(id, WATER | HEAVY_WATER | MOLTEN_FUEL | ACID)
 }
 
 pub fn is_gas(id: u16) -> bool {
-    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM)
+    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM | XENON | FIRE)
 }
 
-/// Immovable structural material (walls, shielding, ice).
+/// Immovable structural material (walls, shielding, devices).
 pub fn is_static_solid(id: u16) -> bool {
-    matches!(id, STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE)
+    matches!(
+        id,
+        STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
+            | PIPE | SENSOR | CONTROL_ROD | FILTER
+    )
 }
 
 /// Granular material that piles with an angle of repose.
@@ -141,7 +177,21 @@ pub fn is_powder(id: u16) -> bool {
             | PU239
             | PU240
             | DEPLETED_URANIUM
+            | SLAG
+            | COAL
     )
+}
+
+pub fn is_flammable(id: u16) -> bool {
+    matches!(id, WOOD | COAL | TNT | HYDROGEN)
+}
+
+pub fn is_conductive(id: u16) -> bool {
+    matches!(id, WIRE | HEATER | SENSOR | STEEL | SPARK | PUMP)
+}
+
+pub fn is_device(id: u16) -> bool {
+    matches!(id, HEATER | PUMP | PIPE | SENSOR | WIRE | CONTROL_ROD)
 }
 
 pub fn is_fluid(id: u16) -> bool {
@@ -151,10 +201,10 @@ pub fn is_fluid(id: u16) -> bool {
 /// How many extra horizontal cells a liquid may travel in one tick (low = viscous).
 pub fn flow_steps(id: u16) -> u32 {
     match id {
-        WATER => 4,
+        WATER | ACID => 4,
         HEAVY_WATER => 3,
         MOLTEN_FUEL => 1,
-        STEAM | HYDROGEN | HELIUM => 3,
+        STEAM | HYDROGEN | HELIUM | FIRE | XENON => 3,
         TRITIUM | DEUTERIUM => 2,
         _ => 0,
     }
@@ -177,11 +227,14 @@ pub fn conductivity(id: u16) -> f32 {
         STEAM | HYDROGEN | HELIUM | TRITIUM | DEUTERIUM => 0.03,
         WATER | HEAVY_WATER => 0.14,
         ICE => 0.18,
-        SAND | FALLOUT | FISSION_PRODUCTS => 0.06,
-        CONCRETE | STONE | GRAPHITE => 0.10,
-        BORON | LITHIUM | TNT => 0.08,
-        STEEL => 0.42,
+        SAND | FALLOUT | FISSION_PRODUCTS | SLAG | COAL => 0.06,
+        CONCRETE | STONE | GRAPHITE | WOOD => 0.10,
+        BORON | LITHIUM | TNT | CONTROL_ROD => 0.08,
+        STEEL | WIRE | HEATER => 0.42,
         LEAD => 0.30,
+        PIPE | PUMP | SENSOR | FILTER => 0.18,
+        ACID => 0.12,
+        FIRE | XENON => 0.04,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | MOLTEN_FUEL => 0.16,
         _ => 0.05,
     }

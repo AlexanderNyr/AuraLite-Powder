@@ -4,13 +4,15 @@ pub mod backend;
 pub mod camera;
 pub mod color_map;
 pub mod compose;
+pub mod overlay;
 pub mod softbuffer_backend;
 pub mod wgpu_backend;
 
 pub use backend::RenderBackend;
 pub use camera::Camera;
 pub use color_map::color_for_element;
-pub use compose::{render_grid_with_glow, render_simulation};
+pub use compose::{render_grid_with_glow, render_simulation, render_simulation_ex};
+pub use overlay::OverlayMode;
 
 #[cfg(feature = "softbuffer")]
 pub use softbuffer_backend::SoftbufferBackend;

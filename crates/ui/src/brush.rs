@@ -10,6 +10,8 @@ pub enum BrushTool {
     Fill,
     Eraser,
     Rectangle,
+    Copy,
+    Stamp,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

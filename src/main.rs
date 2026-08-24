@@ -13,7 +13,7 @@
 
 use aura_lite_core::SimulationState;
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
-use aura_lite_renderer::{render_simulation, Camera as RendererCamera};
+use aura_lite_renderer::{render_simulation_ex, Camera as RendererCamera};
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
 use aura_lite_ui::{brush::BrushTool, AppState};
 #[cfg(any(feature = "softbuffer-renderer", feature = "wgpu-renderer"))]
@@ -237,7 +237,10 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                             let world = camera.screen_to_world(mouse_pos);
                             let gx = world.x as i32;
                             let gy = world.y as i32;
-                            if matches!(app_state.tools.brush.tool, BrushTool::Line | BrushTool::Rectangle) {
+                            if matches!(
+                                app_state.tools.brush.tool,
+                                BrushTool::Line | BrushTool::Rectangle | BrushTool::Copy
+                            ) {
                                 line_start = Some((gx, gy));
                             } else {
                                 apply_brush(&mut app_state, gx, gy, true);
@@ -252,10 +255,15 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                             let gy = world.y as i32;
                             match app_state.tools.brush.tool {
                                 BrushTool::Line => {
+                                    app_state.push_undo();
                                     app_state.tools.brush.apply_line(&mut app_state.simulation.grid, start.0, start.1, gx, gy);
                                 }
                                 BrushTool::Rectangle => {
+                                    app_state.push_undo();
                                     app_state.tools.brush.apply_rectangle(&mut app_state.simulation.grid, start.0, start.1, gx, gy, false);
+                                }
+                                BrushTool::Copy => {
+                                    app_state.copy_from(start.0, start.1, gx, gy);
                                 }
                                 _ => {}
                             }
@@ -292,7 +300,23 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                             elwt.exit();
                         }
                         winit::keyboard::Key::Character(c) if c == "c" || c == "C" => {
+                            app_state.push_undo();
                             app_state.simulation.grid.clear();
+                        }
+                        winit::keyboard::Key::Character(c) if c == "z" || c == "Z" => {
+                            app_state.undo();
+                        }
+                        winit::keyboard::Key::Character(c) if c == "h" || c == "H" => {
+                            app_state.overlay = app_state.overlay.next();
+                        }
+                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::F1) => {
+                            app_state.show_tutorial = !app_state.show_tutorial;
+                        }
+                        winit::keyboard::Key::Character(c) if c == "[" => {
+                            app_state.simulation.shift_control_rods(-2);
+                        }
+                        winit::keyboard::Key::Character(c) if c == "]" => {
+                            app_state.simulation.shift_control_rods(2);
                         }
                         winit::keyboard::Key::Character(c) if c == "s" || c == "S" => {
                             let path = std::env::temp_dir().join("auralite_quick.aura");
@@ -363,12 +387,13 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 let sz = window_clone.inner_size();
                 {
                     let frame = pixels.frame_mut();
-                    render_simulation(
+                    render_simulation_ex(
                         &app_state.simulation,
                         frame,
                         sz.width,
                         sz.height,
                         &camera,
+                        app_state.overlay,
                     );
                 }
                 #[cfg(feature = "native-ui")]
@@ -413,6 +438,9 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
 fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
     match app.tools.brush.tool {
         BrushTool::Brush | BrushTool::Eraser => {
+            if is_start {
+                app.push_undo();
+            }
             app.tools
                 .brush
                 .apply_brush(&mut app.simulation.grid, gx, gy);
@@ -426,10 +454,16 @@ fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
         }
         BrushTool::Fill => {
             if is_start {
+                app.push_undo();
                 app.tools.brush.apply_fill(&mut app.simulation.grid, gx, gy);
             }
         }
-        BrushTool::Rectangle => {}
+        BrushTool::Stamp => {
+            if is_start {
+                app.stamp_at(gx, gy);
+            }
+        }
+        BrushTool::Rectangle | BrushTool::Copy => {}
     }
 }
 

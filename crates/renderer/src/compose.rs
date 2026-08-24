@@ -3,6 +3,7 @@
 
 use crate::camera::Camera;
 use crate::color_map::color_for_element;
+use crate::overlay::{overlay_color, OverlayMode};
 use aura_lite_core::SimulationState;
 use aura_lite_utils::Vec2;
 
@@ -16,6 +17,17 @@ pub fn render_simulation(
     frame_w: u32,
     frame_h: u32,
     camera: &Camera,
+) {
+    render_simulation_ex(sim, frame, frame_w, frame_h, camera, OverlayMode::None);
+}
+
+pub fn render_simulation_ex(
+    sim: &SimulationState,
+    frame: &mut [u8],
+    frame_w: u32,
+    frame_h: u32,
+    camera: &Camera,
+    overlay: OverlayMode,
 ) {
     let fw = frame_w as usize;
     let fh = frame_h as usize;
@@ -35,15 +47,18 @@ pub fn render_simulation(
             let gx = world.x.floor() as i32;
             let gy = world.y.floor() as i32;
             if gx >= 0 && gy >= 0 && (gx as usize) < gw && (gy as usize) < gh {
-                let p = sim.grid.particles[gy as usize * gw + gx as usize];
-                let mut col = if p.is_empty() {
+                let gidx = gy as usize * gw + gx as usize;
+                let p = sim.grid.particles[gidx];
+                let mut col = if let Some(ov) = overlay_color(sim, gidx, overlay) {
+                    ov
+                } else if p.is_empty() {
                     [EMPTY_RGB[0], EMPTY_RGB[1], EMPTY_RGB[2], 255]
                 } else {
                     let mut c = color_for_element(p.element_id);
                     c[3] = 255;
                     c
                 };
-                if !p.is_empty() && p.temperature > 800 {
+                if overlay == OverlayMode::None && !p.is_empty() && p.temperature > 800 {
                     let factor = ((p.temperature as f32 - 800.0) / 2000.0).clamp(0.0, 1.0);
                     col[0] = col[0].saturating_add((factor * 200.0) as u8);
                     col[1] = col[1].saturating_add((factor * 100.0) as u8);

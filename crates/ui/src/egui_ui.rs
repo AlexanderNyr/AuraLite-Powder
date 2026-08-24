@@ -64,9 +64,16 @@ pub fn show_tool_panel(ui: &mut Ui, app: &mut AppState) {
         if ui.button("Rect").clicked() {
             app.tools.brush.tool = crate::brush::BrushTool::Rectangle;
         }
+        if ui.button("Copy").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Copy;
+        }
+        if ui.button("Stamp").clicked() {
+            app.tools.brush.tool = crate::brush::BrushTool::Stamp;
+        }
     });
     ui.label(format!("Current tool: {:?}", app.tools.brush.tool));
     ui.add(egui::Slider::new(&mut app.tools.brush.temperature, 0..=5000).text("Temperature"));
+    ui.label(format!("Clipboard: {} cells", app.clipboard.len()));
 }
 
 #[cfg(feature = "native-ui")]
@@ -114,11 +121,41 @@ pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
             app.simulation.tick();
         }
         if ui.button("Clear").clicked() {
+            app.push_undo();
             app.simulation.grid.clear();
+        }
+        if ui.button("Undo").clicked() {
+            app.undo();
         }
     });
     ui.add(egui::Slider::new(&mut app.controller.speed, 0.1..=5.0).text("Speed"));
     ui.add(egui::Slider::new(&mut app.controller.tick_rate, 1..=120).text("Tick rate"));
+    ui.horizontal(|ui| {
+        ui.label("Overlay:");
+        if ui.button(app.overlay.label()).clicked() {
+            app.overlay = app.overlay.next();
+        }
+    });
+    ui.horizontal(|ui| {
+        if ui.button("Rods up").clicked() {
+            app.simulation.shift_control_rods(-2);
+        }
+        if ui.button("Rods down").clicked() {
+            app.simulation.shift_control_rods(2);
+        }
+        if ui.button("Help").clicked() {
+            app.show_tutorial = !app.show_tutorial;
+        }
+    });
+    ui.separator();
+    ui.label("Scenes");
+    ui.horizontal_wrapped(|ui| {
+        for &scene in aura_lite_core::Scenario::all() {
+            if ui.button(scene.name()).clicked() {
+                app.apply_scenario(scene);
+            }
+        }
+    });
 }
 
 #[cfg(feature = "native-ui")]
@@ -132,10 +169,9 @@ pub fn show_save_load(ui: &mut Ui, app: &mut AppState) {
                 .add_filter("Aura save", &["aura", "json"])
                 .save_file()
             {
-                let _ = aura_lite_io::save_to_file(
+                let _ = aura_lite_io::save_simulation_to_file(
                     &path,
-                    &app.simulation.grid,
-                    &app.simulation.settings,
+                    &app.simulation,
                     app.save_load.compression_enabled,
                 );
                 app.save_load.last_save_path = Some(path.display().to_string());
@@ -181,4 +217,20 @@ pub fn build_ui(ctx: &Context, app: &mut AppState) {
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
         ui.heading("AuraLite Powder - Nuclear Falling Sand");
     });
+    if app.show_tutorial {
+        egui::Window::new("How to play")
+            .open(&mut app.show_tutorial)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.label("Left click: paint   Right drag: pan   Wheel: zoom");
+                ui.label("Space pause · C clear · Z undo · H overlay · [ ] rods");
+                ui.label("S quick-save · F12 screenshot · 1-6 palette shortcuts");
+                ui.separator();
+                ui.label("Copy a rectangle, then Stamp it elsewhere. Temperature slider heats the brush.");
+                ui.label("Control rods soak neutrons without disappearing. Xenon is fission poison.");
+                ui.label("Steam / fire raise pressure and can burst pipes. Acid eats stone into slag.");
+                ui.label("Filters pass fluids (water, steam, acid) but stop powders and solids.");
+                ui.label("Load a scene from the right panel to try a reactor, pit, fire or coolant loop.");
+            });
+    }
 }

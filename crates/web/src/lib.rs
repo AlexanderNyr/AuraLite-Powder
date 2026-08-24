@@ -140,6 +140,31 @@ impl WasmSimulation {
         self.inner.sim.k_effective
     }
 
+    pub fn load_scene(&mut self, name: &str) {
+        let scene = match name {
+            "reactor" => aura_lite_core::Scenario::Reactor,
+            "rods" => aura_lite_core::Scenario::ControlledReactor,
+            "bomb" => aura_lite_core::Scenario::Bomb,
+            "ice" => aura_lite_core::Scenario::IceMelt,
+            "hourglass" => aura_lite_core::Scenario::Hourglass,
+            "fusion" => aura_lite_core::Scenario::FusionCell,
+            "loop" => aura_lite_core::Scenario::CoolantLoop,
+            "fire" => aura_lite_core::Scenario::ForestFire,
+            _ => aura_lite_core::Scenario::Empty,
+        };
+        self.inner.sim.load_scenario(scene);
+    }
+
+    pub fn save_bytes(&self) -> Vec<u8> {
+        aura_lite_io::save_simulation_to_bytes(&self.inner.sim, false).unwrap_or_default()
+    }
+
+    pub fn load_bytes(&mut self, data: &[u8]) {
+        if let Ok(save) = aura_lite_io::load_save_from_bytes(data, false) {
+            let _ = save.apply_to(&mut self.inner.sim);
+        }
+    }
+
     #[cfg(feature = "web")]
     pub fn render(&self, canvas_id: &str) -> Result<(), JsValue> {
         let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;

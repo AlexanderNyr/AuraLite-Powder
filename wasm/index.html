@@ -2,37 +2,50 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AuraLite Powder - WASM Demo</title>
+<title>AuraLite Powder</title>
 <style>
 body { margin:0; background:#111; color:#eee; font-family: sans-serif; display:flex; flex-direction:column; align-items:center; }
 canvas { border:1px solid #555; margin-top:10px; image-rendering: pixelated; width:512px; height:512px; }
-#info { margin:10px; max-width:800px; }
-#palette button { margin:2px; }
+#bar button { margin:2px; }
+#info { margin:10px; max-width:820px; }
 </style>
 </head>
 <body>
-<h1>AuraLite Powder - Nuclear Falling Sand (WASM)</h1>
+<h1>AuraLite Powder</h1>
 <canvas id="canvas" width="256" height="256"></canvas>
+<div id="bar">
+  <button data-scene="reactor">Reactor</button>
+  <button data-scene="rods">Rods</button>
+  <button data-scene="bomb">Pit</button>
+  <button data-scene="ice">Ice</button>
+  <button data-scene="hourglass">Hourglass</button>
+  <button data-scene="fusion">Fusion</button>
+  <button data-scene="loop">Loop</button>
+  <button data-scene="fire">Fire</button>
+  <button id="save">Save</button>
+  <button id="load">Load</button>
+</div>
 <div id="palette">
   <button data-id="1">Sand</button>
   <button data-id="2">Water</button>
   <button data-id="4">U-235</button>
   <button data-id="13">Neutron</button>
-  <button data-id="21">Deuterium</button>
-  <button data-id="20">Tritium</button>
+  <button data-id="32">Fire</button>
+  <button data-id="33">Wood</button>
+  <button data-id="34">Acid</button>
+  <button data-id="36">Heater</button>
+  <button data-id="40">Rod</button>
+  <button data-id="44">Filter</button>
   <button data-id="0">Erase</button>
 </div>
 <div id="info">
-<p>Click/drag to paint. Space pauses. Demo: U-235 pile + D+T sample.</p>
+<p>Click/drag paint · Space pause · C clear · scenes on the top row.</p>
 <div id="log">Loading…</div>
 </div>
 <script type="module">
 import init, { create_simulation } from "./pkg/aura_lite_wasm.js";
 
-let sim;
-let selected = 1;
-let painting = false;
-let paused = false;
+let sim, selected = 1, painting = false, paused = false;
 
 function gridPos(ev, canvas) {
   const rect = canvas.getBoundingClientRect();
@@ -57,6 +70,26 @@ async function run() {
   document.querySelectorAll("#palette button").forEach((btn) => {
     btn.addEventListener("click", () => { selected = Number(btn.dataset.id); });
   });
+  document.querySelectorAll("[data-scene]").forEach((btn) => {
+    btn.addEventListener("click", () => sim.load_scene(btn.dataset.scene));
+  });
+  document.getElementById("save").onclick = () => {
+    const bytes = sim.save_bytes();
+    const blob = new Blob([bytes], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "auralite.aura";
+    a.click();
+  };
+  document.getElementById("load").onclick = () => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.onchange = async () => {
+      const buf = new Uint8Array(await inp.files[0].arrayBuffer());
+      sim.load_bytes(buf);
+    };
+    inp.click();
+  };
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space") { paused = !paused; e.preventDefault(); }
     if (e.key === "c" || e.key === "C") sim.clear();

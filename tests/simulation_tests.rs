@@ -294,7 +294,7 @@ fn test_element_registry_consistency() {
     // Ensure all element IDs have definitions
     for id in 0..=MAX_ELEMENT_ID {
         let def = aura_lite_elements::registry::get_definition(id);
-        if id <= BORON {
+        if id <= FILTER {
             assert!(def.is_some(), "Element {} should have a definition", id);
         }
     }
@@ -480,4 +480,101 @@ fn test_dense_powder_sinks_through_water() {
         .unwrap_or(0);
     assert!(u_y >= 9, "U-235 should sink through water, y={u_y}");
     assert_eq!(sim.grid.get(4, 5).unwrap().element_id, LEAD);
+}
+
+#[test]
+fn test_static_heater_warms_neighbors() {
+    let mut sim = SimulationState::new(12, 12, 1);
+    sim.grid.set(6, 6, Particle::new(HEATER, 800));
+    sim.grid.set(6, 5, Particle::new(WATER, 293));
+    for _ in 0..8 {
+        sim.tick();
+    }
+    assert!(sim.grid.get(6, 5).unwrap().temperature > 293);
+}
+
+#[test]
+fn test_scenario_bomb_places_plutonium() {
+    let mut sim = SimulationState::new(64, 64, 0);
+    sim.load_scenario(aura_lite_core::Scenario::Bomb);
+    let pu = sim
+        .grid
+        .particles
+        .iter()
+        .filter(|p| p.element_id == PU239)
+        .count();
+    assert!(pu > 20, "bomb scene should pack a Pu pit, got {pu}");
+}
+
+#[test]
+fn test_control_rods_shift() {
+    let mut sim = SimulationState::new(16, 20, 0);
+    sim.grid.set(8, 10, Particle::new(CONTROL_ROD, 293));
+    sim.shift_control_rods(-1);
+    assert_eq!(sim.grid.get(8, 9).unwrap().element_id, CONTROL_ROD);
+    assert!(sim.grid.get(8, 10).unwrap().is_empty());
+}
+
+#[test]
+fn test_acid_eats_stone() {
+    let mut eaten = false;
+    for seed in 0..20 {
+        let mut sim = SimulationState::new(10, 10, seed);
+        for x in 0..10 {
+            sim.grid.set(x, 8, Particle::new(STONE, 293));
+        }
+        sim.grid.set(5, 7, Particle::new(ACID, 293));
+        for _ in 0..40 {
+            sim.tick();
+        }
+        if (0..10).any(|x| sim.grid.get(x, 8).map(|p| p.element_id) == Some(SLAG)) {
+            eaten = true;
+            break;
+        }
+    }
+    assert!(eaten, "acid should dissolve stone in some seeds");
+}
+
+#[test]
+fn test_filter_passes_water_not_sand() {
+    let mut sim = SimulationState::new(8, 10, 1);
+    for x in 0..8 {
+        sim.grid.set(x, 5, Particle::new(FILTER, 293));
+        sim.grid.set(x, 9, Particle::new(STONE, 293));
+    }
+    sim.grid.set(3, 4, Particle::new(WATER, 293));
+    sim.grid.set(5, 4, Particle::new(SAND, 293));
+    for _ in 0..20 {
+        sim.tick();
+    }
+    let water_below = (0..8).any(|x| {
+        (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(WATER))
+    });
+    let sand_below = (0..8).any(|x| {
+        (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(SAND))
+    });
+    assert!(water_below, "water should pass through a filter");
+    assert!(!sand_below, "sand should not pass through a filter");
+}
+
+#[test]
+fn test_sensor_heats_with_criticality() {
+    let mut sim = SimulationState::new(16, 16, 2);
+    sim.grid.set(8, 8, Particle::new(SENSOR, 293));
+    for y in 6..11 {
+        for x in 6..11 {
+            if x == 8 && y == 8 {
+                continue;
+            }
+            sim.grid.set(x, y, Particle::new(U235, 400));
+        }
+    }
+    sim.grid.set(8, 7, Particle::new(NEUTRON_THERMAL, 350));
+    for _ in 0..6 {
+        sim.tick();
+    }
+    assert!(
+        sim.grid.get(8, 8).unwrap().temperature > 293,
+        "sensor should warm when the pile is active"
+    );
 }

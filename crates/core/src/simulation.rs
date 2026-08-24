@@ -1,4 +1,5 @@
 use crate::chunk::{ChunkPool, CHUNK_SIZE};
+use crate::devices::{self, PressureField};
 use crate::element_id::*;
 use crate::grid::{Grid, GridSnapshot};
 use crate::particle::Particle;
@@ -54,6 +55,8 @@ pub struct SimulationState {
     pub chunk_pool: ChunkPool,
     #[serde(skip, default)]
     pub velocities: VelocityField,
+    #[serde(skip, default)]
+    pub pressure: PressureField,
 }
 
 impl SimulationState {
@@ -72,6 +75,7 @@ impl SimulationState {
             k_effective: 0.0,
             chunk_pool: ChunkPool::new(width, height),
             velocities: VelocityField::new((width * height) as usize),
+            pressure: PressureField::new((width * height) as usize),
         }
     }
 
@@ -79,6 +83,16 @@ impl SimulationState {
         self.grid.resize(w, h);
         self.chunk_pool = ChunkPool::new(w, h);
         self.velocities = VelocityField::new((w * h) as usize);
+        self.pressure = PressureField::new((w * h) as usize);
+    }
+
+    pub fn refresh_chunks_public(&mut self) {
+        self.refresh_chunks();
+    }
+
+    pub fn shift_control_rods(&mut self, dy: i32) {
+        devices::shift_control_rods(&mut self.grid, dy);
+        self.refresh_chunks();
     }
 
     /// Prefill a small graphite-moderated U-235 pile plus a D+T fusion sample.
@@ -155,7 +169,7 @@ impl SimulationState {
                 if is_moderator(id) {
                     moderator += 1;
                 }
-                if id == BORON {
+                if matches!(id, BORON | CONTROL_ROD | XENON) {
                     absorber += 1;
                 }
             }
@@ -169,6 +183,13 @@ impl SimulationState {
         let mut rng = fastrand::Rng::with_seed(self.seed.wrapping_add(self.tick));
         self.process_neutron_queue(&mut rng);
         self.physics_pass(&mut rng);
+        devices::step_devices(
+            &mut self.grid,
+            &mut self.velocities,
+            &mut self.pressure,
+            &mut rng,
+            self.k_effective,
+        );
 
         let total_cells = self.grid.width as usize * self.grid.height as usize;
         if total_cells >= 65536 {
@@ -219,7 +240,7 @@ impl SimulationState {
                         if is_fissile(id) {
                             fissile.push((x, y));
                         }
-                        if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM) {
+                        if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON) {
                             decay.push((x, y));
                         }
                         if id == DEUTERIUM || id == TRITIUM {
@@ -314,7 +335,7 @@ impl SimulationState {
                 if rng.f32() < prob {
                     self.trigger_fission(x, y, rng);
                 }
-            } else if rng.f32() < reactions::SPONTANEOUS_FISSION_PROB {
+            } else if rng.f32() < reactions::spontaneous_fission_prob(self.k_effective) {
                 self.trigger_fission(x, y, rng);
             }
         }
@@ -447,8 +468,8 @@ impl SimulationState {
                     } else if let Some(target) = self.grid.get_mut(x, y) {
                         target.temperature = target.temperature.saturating_add(20);
                     }
-                } else if cell_id == BORON {
-                    if rng.f32() < reactions::absorber_chance(BORON, ev.energy) {
+                } else if matches!(cell_id, BORON | CONTROL_ROD | XENON) {
+                    if rng.f32() < reactions::absorber_chance(cell_id, ev.energy) {
                         self.grid.set(x, y, Particle::new(FALLOUT, 500));
                         let ax = (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1)
                             as u32;
@@ -530,7 +551,7 @@ impl SimulationState {
             if is_fissile(id) {
                 fissile_to_check.push((x, y));
             }
-            if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM) {
+            if matches!(id, U235 | U238 | PU239 | PU240 | TRITIUM | XENON) {
                 decay_to_check.push((x, y));
             }
             if id == DEUTERIUM || id == TRITIUM {
@@ -583,18 +604,34 @@ impl SimulationState {
         self.fission_count += 1;
         self.reaction_count += 1;
 
-        let n_count = reactions::neutron_count(orig.element_id, rng);
-        for _ in 0..n_count {
+        let n_count = reactions::neutron_count(orig.element_id, rng)
+            + reactions::k_extra_neutrons(self.k_effective, rng);
+        for i in 0..n_count {
             let dx = rng.i32(-2..=2);
             let dy = rng.i32(-2..=2);
             let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;
             let ny = (y as i32 + dy).clamp(0, self.grid.height as i32 - 1) as u32;
+            // ~15% delayed neutrons — they keep a pile critical after the prompt burst.
+            let delay = if i == 0 && rng.f32() < 0.15 {
+                rng.u8(10..=28)
+            } else {
+                rng.u8(1..=3)
+            };
             self.neutron_queue.push_back(NeutronEvent {
                 x: nx,
                 y: ny,
-                delay: rng.u8(1..=3),
+                delay,
                 energy: NeutronEnergy::Fast,
             });
+        }
+        if rng.f32() < 0.08 {
+            let dx = rng.i32(-1..=1);
+            let dy = rng.i32(-1..=1);
+            let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;
+            let ny = (y as i32 + dy).clamp(0, self.grid.height as i32 - 1) as u32;
+            if self.grid.get(nx, ny).unwrap().is_empty() {
+                self.grid.set(nx, ny, Particle::new(XENON, 400));
+            }
         }
         for _ in 0..rng.u32(1..=2) {
             let dx = rng.i32(-1..=1);
@@ -663,18 +700,21 @@ impl SimulationState {
         self.grid.set(x, y, next);
         self.decay_count += 1;
 
-        let dx = rng.i32(-1..=1);
-        let dy = rng.i32(-1..=1);
-        let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;
-        let ny = (y as i32 + dy).clamp(0, self.grid.height as i32 - 1) as u32;
-        if self.grid.get(nx, ny).unwrap().is_empty() {
-            self.grid
-                .set(nx, ny, Particle::new(radiation, 400).with_lifetime(0));
+        if radiation != AIR {
+            let dx = rng.i32(-1..=1);
+            let dy = rng.i32(-1..=1);
+            let nx = (x as i32 + dx).clamp(0, self.grid.width as i32 - 1) as u32;
+            let ny = (y as i32 + dy).clamp(0, self.grid.height as i32 - 1) as u32;
+            if self.grid.get(nx, ny).unwrap().is_empty() {
+                self.grid
+                    .set(nx, ny, Particle::new(radiation, 400).with_lifetime(0));
+            }
         }
     }
 
     fn trigger_tnt(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
         let radius = 6;
+        physics::apply_impulse(&mut self.grid, &mut self.velocities, x, y, radius, rng);
         for dy in -radius..=radius {
             for dx in -radius..=radius {
                 if dx * dx + dy * dy > radius * radius {

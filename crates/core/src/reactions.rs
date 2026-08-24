@@ -86,6 +86,7 @@ pub fn half_life_ticks(element_id: u16) -> u64 {
         PU239 => 500_000,
         PU240 => 400_000,
         TRITIUM => 100_000,
+        XENON => 8_000,
         _ => 0,
     }
 }
@@ -97,6 +98,7 @@ pub fn decay_daughter(element_id: u16) -> u16 {
         PU239 => U235,
         PU240 => PU239,
         TRITIUM => HELIUM,
+        XENON => AIR,
         _ => FALLOUT,
     }
 }
@@ -105,6 +107,7 @@ pub fn decay_radiation(element_id: u16) -> u16 {
     match element_id {
         U235 | U238 | PU239 | PU240 => ALPHA,
         TRITIUM => BETA,
+        XENON => AIR, // poison just fades, no extra radiation
         _ => GAMMA,
     }
 }
@@ -122,6 +125,10 @@ pub fn absorber_chance(id: u16, energy: NeutronEnergy) -> f32 {
     match (id, energy) {
         (BORON, NeutronEnergy::Thermal) => 0.8,
         (BORON, NeutronEnergy::Fast) => 0.6,
+        (CONTROL_ROD, NeutronEnergy::Thermal) => 0.92,
+        (CONTROL_ROD, NeutronEnergy::Fast) => 0.70,
+        (XENON, NeutronEnergy::Thermal) => 0.95,
+        (XENON, NeutronEnergy::Fast) => 0.55,
         _ => 0.0,
     }
 }
@@ -133,7 +140,25 @@ pub fn criticality_factor(fissile_count: u32, moderator_count: u32, absorber_cou
     let absorption = absorber_count as f32 * 0.8;
     let escape = 0.2;
     let k = (production * (1.0 + moderation)) / (1.0 + absorption + escape);
-    k / 100.0
+    // Scale so a small pile sits near 0.2–1.5 instead of huge raw numbers.
+    (k / 80.0).clamp(0.0, 3.5)
+}
+
+/// Extra prompt neutrons when the pile is supercritical.
+pub fn k_extra_neutrons(k_eff: f32, rng: &mut fastrand::Rng) -> u32 {
+    if k_eff <= 1.0 {
+        return 0;
+    }
+    let p = ((k_eff - 1.0) * 0.45).clamp(0.0, 0.7);
+    if rng.f32() < p {
+        1
+    } else {
+        0
+    }
+}
+
+pub fn spontaneous_fission_prob(k_eff: f32) -> f32 {
+    SPONTANEOUS_FISSION_PROB * (0.4 + k_eff).clamp(0.2, 2.5)
 }
 
 pub fn is_critical(mass_count: u32, threshold: u32) -> bool {
@@ -170,5 +195,21 @@ mod tests {
     #[test]
     fn heavy_water_moderates_better_than_graphite() {
         assert!(moderator_thermalize_chance(HEAVY_WATER) > moderator_thermalize_chance(GRAPHITE));
+    }
+
+    #[test]
+    fn xenon_decays_to_air_without_radiation() {
+        assert_eq!(decay_daughter(XENON), AIR);
+        assert_eq!(decay_radiation(XENON), AIR);
+        assert_eq!(half_life_ticks(XENON), 8_000);
+    }
+
+    #[test]
+    fn control_rods_and_xenon_absorb() {
+        assert!(
+            absorber_chance(CONTROL_ROD, NeutronEnergy::Thermal)
+                > absorber_chance(BORON, NeutronEnergy::Thermal)
+        );
+        assert!(absorber_chance(XENON, NeutronEnergy::Thermal) > 0.9);
     }
 }
