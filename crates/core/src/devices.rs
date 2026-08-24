@@ -59,9 +59,7 @@ pub fn step_devices(
             out
         }
     } else {
-        (0..h)
-            .flat_map(|y| (0..w).map(move |x| (x, y)))
-            .collect()
+        (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).collect()
     };
 
     for (x, y) in cells {
@@ -137,7 +135,11 @@ fn pump_fluid(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         }
         if to.element_id == PIPE {
             let ia = grid.index(fx as u32, fy as u32);
-            grid.set(tx as u32, ty as u32, Particle::new(pipe_with(from.element_id), from.temperature));
+            grid.set(
+                tx as u32,
+                ty as u32,
+                Particle::new(pipe_with(from.element_id), from.temperature),
+            );
             grid.set(fx as u32, fy as u32, Particle::air());
             if vel.vx.len() == grid.len() {
                 vel.vx[grid.index(tx as u32, ty as u32)] = (-dx as i8).clamp(-2, 2);
@@ -208,8 +210,10 @@ fn tick_fire(
         grid.set(x, y, Particle::air());
         return;
     }
-    grid.modify(x, y, |c| { c.lifetime = life;
-        c.temperature = c.temperature.saturating_add(12); });
+    grid.modify(x, y, |c| {
+        c.lifetime = life;
+        c.temperature = c.temperature.saturating_add(12);
+    });
     if fuel_h2 {
         let i = grid.index(x, y);
         if i < pressure.p.len() {
@@ -228,17 +232,31 @@ fn tick_fire(
             }
             let n = grid.get(nx as u32, ny as u32).unwrap();
             if n.element_id == HYDROGEN && rng.f32() < 0.55 {
-                grid.set(nx as u32, ny as u32, Particle::new(FIRE, 1300).with_lifetime(0));
+                grid.set(
+                    nx as u32,
+                    ny as u32,
+                    Particle::new(FIRE, 1300).with_lifetime(0),
+                );
                 continue;
             }
             if is_flammable(n.element_id) && rng.f32() < 0.18 {
                 if n.element_id == TNT {
-                    grid.modify(nx as u32, ny as u32, |t| { t.temperature = t.temperature.saturating_add(80); });
+                    grid.modify(nx as u32, ny as u32, |t| {
+                        t.temperature = t.temperature.saturating_add(80);
+                    });
                 } else {
-                    grid.set(nx as u32, ny as u32, Particle::new(FIRE, 1100).with_lifetime(0));
+                    grid.set(
+                        nx as u32,
+                        ny as u32,
+                        Particle::new(FIRE, 1100).with_lifetime(0),
+                    );
                 }
             } else if n.is_empty() && air > 0 && rng.f32() < 0.04 {
-                grid.set(nx as u32, ny as u32, Particle::new(FIRE, 900).with_lifetime(0));
+                grid.set(
+                    nx as u32,
+                    ny as u32,
+                    Particle::new(FIRE, 900).with_lifetime(0),
+                );
             } else {
                 grid.modify(nx as u32, ny as u32, |t| {
                     t.temperature = t.temperature.saturating_add(8);
@@ -274,7 +292,9 @@ fn tick_spark(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
         grid.set(x, y, Particle::air());
         return;
     }
-    grid.modify(x, y, |c| { c.lifetime = c.lifetime.saturating_add(1); });
+    grid.modify(x, y, |c| {
+        c.lifetime = c.lifetime.saturating_add(1);
+    });
     // Charge neighbouring wire — the pulse then walks along the cable.
     for dy in -1..=1_i32 {
         for dx in -1..=1_i32 {
@@ -338,22 +358,28 @@ fn tick_wire(
             let n = grid.get(nx as u32, ny as u32).unwrap();
             match n.element_id {
                 WIRE if n.lifetime == 0 => {
-                    grid.modify(nx as u32, ny as u32, |w| { w.lifetime = snap_life.saturating_sub(1).max(1);
-                        w.temperature = w.temperature.saturating_add(12); });
+                    grid.modify(nx as u32, ny as u32, |w| {
+                        w.lifetime = snap_life.saturating_sub(1).max(1);
+                        w.temperature = w.temperature.saturating_add(12);
+                    });
                 }
                 HEATER => {
                     heat_around(grid, nx as u32, ny as u32, 30);
                 }
                 PUMP => pump_fluid(grid, vel, nx as u32, ny as u32),
                 TNT => {
-                    grid.modify(nx as u32, ny as u32, |t| { t.temperature = t.temperature.saturating_add(120); });
+                    grid.modify(nx as u32, ny as u32, |t| {
+                        t.temperature = t.temperature.saturating_add(120);
+                    });
                 }
                 _ => {}
             }
         }
     }
-    grid.modify(x, y, |w| { w.lifetime = snap_life.saturating_sub(1);
-        w.temperature = w.temperature.saturating_add(6); });
+    grid.modify(x, y, |w| {
+        w.lifetime = snap_life.saturating_sub(1);
+        w.temperature = w.temperature.saturating_add(6);
+    });
     let _ = rng;
 }
 
@@ -376,7 +402,9 @@ fn tick_sensor(grid: &mut Grid, x: u32, y: u32, k_eff: f32, rng: &mut fastrand::
     let t = 293u16
         .saturating_add(flux.saturating_mul(45))
         .saturating_add((k_eff * 220.0) as u16);
-    grid.modify(x, y, |s| { s.temperature = t; });
+    grid.modify(x, y, |s| {
+        s.temperature = t;
+    });
     let tripped = k_eff > 1.05 || flux >= 3;
     if tripped && rng.f32() < 0.25 {
         for dy in -1..=1_i32 {
@@ -399,7 +427,9 @@ fn tick_sensor(grid: &mut Grid, x: u32, y: u32, k_eff: f32, rng: &mut fastrand::
                     return;
                 }
                 if n.element_id == WIRE && n.lifetime == 0 {
-                    grid.modify(nx as u32, ny as u32, |w| { w.lifetime = 8; });
+                    grid.modify(nx as u32, ny as u32, |w| {
+                        w.lifetime = 8;
+                    });
                     return;
                 }
             }

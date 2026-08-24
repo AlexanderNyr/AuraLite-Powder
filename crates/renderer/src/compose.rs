@@ -78,6 +78,7 @@ pub fn render_simulation_ex(
 }
 
 /// Stroke a world-space rectangle (copy / stamp preview).
+#[allow(clippy::too_many_arguments)]
 pub fn stroke_world_rect(
     frame: &mut [u8],
     frame_w: u32,
@@ -104,6 +105,7 @@ pub fn stroke_world_rect(
 }
 
 /// Ghost-stamp the clipboard offsets at the cursor.
+#[allow(clippy::too_many_arguments)]
 pub fn stamp_preview(
     frame: &mut [u8],
     frame_w: u32,

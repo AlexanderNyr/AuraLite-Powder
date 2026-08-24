@@ -121,23 +121,13 @@ pub fn rasterize(
         match &clipped.primitive {
             Primitive::Mesh(mesh) => {
                 let tex = textures.images.get(&mesh.texture_id);
-                for tri in mesh.indices.chunks_exact(3) {
+                for tri in mesh.indices.as_chunks::<3>().0 {
                     let v0 = mesh.vertices[tri[0] as usize];
                     let v1 = mesh.vertices[tri[1] as usize];
                     let v2 = mesh.vertices[tri[2] as usize];
                     raster_triangle(
-                        frame,
-                        fw,
-                        fh,
-                        ppp,
-                        clip_min_x,
-                        clip_min_y,
-                        clip_max_x,
-                        clip_max_y,
-                        v0,
-                        v1,
-                        v2,
-                        tex,
+                        frame, fw, fh, ppp, clip_min_x, clip_min_y, clip_max_x, clip_max_y, v0, v1,
+                        v2, tex,
                     );
                 }
             }
@@ -146,6 +136,7 @@ pub fn rasterize(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn raster_triangle(
     frame: &mut [u8],
     fw: i32,

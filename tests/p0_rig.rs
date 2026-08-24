@@ -16,14 +16,18 @@ use aura_lite_core::{
 // ───────────────────────── deterministic PRNG (local, no extra dep) ──────────
 struct Rng(u64);
 impl Rng {
-    fn new(seed: u64) -> Self { Self(seed) }
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
     fn u32(&mut self, n: u32) -> u32 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         (self.0 as u32) % n
     }
-    fn f(&mut self) -> f32 { self.u32(1 << 24) as f32 / (1 << 24) as f32 }
+    fn f(&mut self) -> f32 {
+        self.u32(1 << 24) as f32 / (1 << 24) as f32
+    }
 }
 
 // ───────────────────────── golden fingerprint ────────────────────────────────
@@ -54,29 +58,67 @@ const SEED: u64 = 42;
 /// Scenes are chosen to be *deterministic*: hand-built grids or scenarios that
 /// do not call the un-seeded global `fastrand` (reactor_demo does, so it is
 /// excluded — see ROADMAP §1 Fact 10 / P0 risk note).
-fn golden_scenes() -> Vec<(&'static str, Box<dyn Fn(&mut SimulationState)>, (usize, u64))> {
+#[allow(clippy::type_complexity)]
+fn golden_scenes() -> Vec<(
+    &'static str,
+    Box<dyn Fn(&mut SimulationState)>,
+    (usize, u64),
+)> {
     vec![
-        ("sand_pile", Box::new(|sim| {
-            for x in 0..16 {
-                for y in 0..80 {
-                    sim.grid.set(x, y, Particle::new(SAND, 293));
+        (
+            "sand_pile",
+            Box::new(|sim| {
+                for x in 0..16 {
+                    for y in 0..80 {
+                        sim.grid.set(x, y, Particle::new(SAND, 293));
+                    }
                 }
-            }
-        }), (1280, 0x2debc27eea498cf2)),
-        ("water_basin", Box::new(|sim| {
-            for x in 0..sim.grid.width {
-                sim.grid.set(x, sim.grid.height - 1, Particle::new(STONE, 293));
-            }
-            for y in 60..sim.grid.height - 1 {
-                for x in 20..60 {
-                    sim.grid.set(x, y, Particle::new(WATER, 293));
+            }),
+            (1280, 0x2debc27eea498cf2),
+        ),
+        (
+            "water_basin",
+            Box::new(|sim| {
+                for x in 0..sim.grid.width {
+                    sim.grid
+                        .set(x, sim.grid.height - 1, Particle::new(STONE, 293));
                 }
-            }
-        }), (2808, 0x14d93f86e6910b6f)),
-        ("scenario_hourglass", Box::new(|sim| { sim.load_scenario(Scenario::Hourglass); }), (4349, 0x96c4c0107286234d)),
-        ("scenario_bomb", Box::new(|sim| { sim.load_scenario(Scenario::Bomb); }), (368, 0xd3ca58632f8f3f53)),
-        ("scenario_coolant_loop", Box::new(|sim| { sim.load_scenario(Scenario::CoolantLoop); }), (826, 0xf6e5d2ba81977e49)),
-        ("scenario_ice_melt", Box::new(|sim| { sim.load_scenario(Scenario::IceMelt); }), (4694, 0xc4524489bd792166)),
+                for y in 60..sim.grid.height - 1 {
+                    for x in 20..60 {
+                        sim.grid.set(x, y, Particle::new(WATER, 293));
+                    }
+                }
+            }),
+            (2808, 0x14d93f86e6910b6f),
+        ),
+        (
+            "scenario_hourglass",
+            Box::new(|sim| {
+                sim.load_scenario(Scenario::Hourglass);
+            }),
+            (4349, 0x96c4c0107286234d),
+        ),
+        (
+            "scenario_bomb",
+            Box::new(|sim| {
+                sim.load_scenario(Scenario::Bomb);
+            }),
+            (368, 0xd3ca58632f8f3f53),
+        ),
+        (
+            "scenario_coolant_loop",
+            Box::new(|sim| {
+                sim.load_scenario(Scenario::CoolantLoop);
+            }),
+            (826, 0xf6e5d2ba81977e49),
+        ),
+        (
+            "scenario_ice_melt",
+            Box::new(|sim| {
+                sim.load_scenario(Scenario::IceMelt);
+            }),
+            (4694, 0xc4524489bd792166),
+        ),
     ]
 }
 
@@ -123,7 +165,10 @@ fn golden_tick_corpus() {
         return;
     }
 
-    assert!(all_ok, "golden corpus drifted — see stderr; re-record only after a reviewed model change");
+    assert!(
+        all_ok,
+        "golden corpus drifted — see stderr; re-record only after a reviewed model change"
+    );
 }
 
 // ───────────────────────── property tests (decision D7) ─────────────────────
@@ -145,7 +190,10 @@ fn prop_world_screen_roundtrip() {
         let world = cam.screen_to_world(p);
         let back = cam.world_to_screen(world);
         let d = ((back.x - p.x).powi(2) + (back.y - p.y).powi(2)).sqrt();
-        assert!(d < 1e-3, "world<->screen not an involution: {back:?} vs {p:?}");
+        assert!(
+            d < 1e-3,
+            "world<->screen not an involution: {back:?} vs {p:?}"
+        );
     }
 }
 
@@ -164,7 +212,10 @@ fn prop_zoom_then_unzoom_is_identity() {
         cam.zoom(0.5, Some(center));
         let after = cam.screen_to_world(center);
         let d = ((after.x - before.x).abs()).max((after.y - before.y).abs());
-        assert!(d < 1e-2, "zoom(2)∘zoom(0.5) not identity at cursor: {before:?} -> {after:?}");
+        assert!(
+            d < 1e-2,
+            "zoom(2)∘zoom(0.5) not identity at cursor: {before:?} -> {after:?}"
+        );
     }
 }
 
@@ -197,7 +248,8 @@ fn prop_save_roundtrip_preserves_grid() {
             // with a non-default temperature is *supposed* to lose it. We place
             // only real material so the round-trip must be exact.
             let id = 1 + rng.u32(MAX_ELEMENT_ID as u32) as u16; // 1..=47
-            sim.grid.set(x, y, Particle::new(id, 293 + rng.u32(2000) as u16));
+            sim.grid
+                .set(x, y, Particle::new(id, 293 + rng.u32(2000) as u16));
         }
         let bytes = aura_lite_io::save_simulation_to_bytes(&sim, false).unwrap();
         let save = aura_lite_io::load_save_from_bytes(&bytes, false).unwrap();
@@ -205,7 +257,11 @@ fn prop_save_roundtrip_preserves_grid() {
         save.apply_to(&mut loaded).unwrap();
         assert_eq!(loaded.grid.width, sim.grid.width);
         assert_eq!(loaded.grid.height, sim.grid.height);
-        assert_eq!(loaded.grid.particles_vec(), sim.grid.particles_vec(), "save round-trip lost a cell");
+        assert_eq!(
+            loaded.grid.particles_vec(),
+            sim.grid.particles_vec(),
+            "save round-trip lost a cell"
+        );
         assert_eq!(loaded.tick, sim.tick);
     }
 }
@@ -242,7 +298,10 @@ fn prop_chunk_index_roundtrip() {
         let active = pool.active_chunks();
         let expanded = pool.expanded_active(1);
         for c in active {
-            assert!(expanded.contains(&c), "halo must cover active set: {c:?} missing");
+            assert!(
+                expanded.contains(&c),
+                "halo must cover active set: {c:?} missing"
+            );
         }
     }
 }
@@ -309,7 +368,9 @@ fn invariant_registry_and_core_density_agree() {
         assert!(
             (def.density - core_d).abs() < 1e-4,
             "element {id} ({}) density drift: registry {} vs core {}",
-            def.name, def.density, core_d
+            def.name,
+            def.density,
+            core_d
         );
     }
 }
@@ -338,7 +399,10 @@ fn deterministic_across_thread_counts() {
         s
     };
     let run = |threads: usize| -> (usize, u64) {
-        let pool = ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
         let mut s = build();
         let ptr = &mut s;
         pool.install(move || {

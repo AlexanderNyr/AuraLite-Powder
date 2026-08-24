@@ -337,8 +337,7 @@ mod tests {
     #[test]
     fn test_save_simulation_preserves_queue_and_counters() {
         let mut sim = SimulationState::new(16, 16, 7);
-        sim.grid
-            .set(3, 3, Particle::new(element_id::U235, 400));
+        sim.grid.set(3, 3, Particle::new(element_id::U235, 400));
         sim.neutron_queue.push_back(aura_lite_core::NeutronEvent {
             x: 4,
             y: 4,

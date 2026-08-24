@@ -517,7 +517,7 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                         );
                     }
                 }
-                if app_state.recording && fps_accum % 2 == 0 {
+                if app_state.recording && fps_accum.is_multiple_of(2) {
                     let frame = pixels.frame();
                     app_state.push_rec_frame(frame, sz.width, sz.height);
                 }

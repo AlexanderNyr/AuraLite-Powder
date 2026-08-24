@@ -158,15 +158,33 @@ pub fn is_liquid(id: u16) -> bool {
 }
 
 pub fn is_gas(id: u16) -> bool {
-    matches!(id, HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM | XENON | FIRE | IODINE)
+    matches!(
+        id,
+        HYDROGEN | HELIUM | TRITIUM | DEUTERIUM | STEAM | XENON | FIRE | IODINE
+    )
 }
 
 /// Immovable structural material (walls, shielding, devices).
 pub fn is_static_solid(id: u16) -> bool {
     matches!(
         id,
-        STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
-            | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | CONTROL_ROD | FILTER
+        STONE
+            | CONCRETE
+            | STEEL
+            | LEAD
+            | GRAPHITE
+            | BORON
+            | ICE
+            | WOOD
+            | WIRE
+            | HEATER
+            | PUMP
+            | PIPE
+            | PIPE_WATER
+            | PIPE_STEAM
+            | SENSOR
+            | CONTROL_ROD
+            | FILTER
     )
 }
 
@@ -216,7 +234,10 @@ pub fn is_conductive(id: u16) -> bool {
 }
 
 pub fn is_device(id: u16) -> bool {
-    matches!(id, HEATER | PUMP | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | WIRE | CONTROL_ROD)
+    matches!(
+        id,
+        HEATER | PUMP | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | WIRE | CONTROL_ROD
+    )
 }
 
 pub fn is_fluid(id: u16) -> bool {

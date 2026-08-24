@@ -331,8 +331,7 @@ impl SimulationState {
                                     if (id == DEUTERIUM && nid == TRITIUM)
                                         || (id == TRITIUM && nid == DEUTERIUM)
                                     {
-                                        let (ax, ay, bx, by) = if (x, y) < (nx as u32, ny as u32)
-                                        {
+                                        let (ax, ay, bx, by) = if (x, y) < (nx as u32, ny as u32) {
                                             (x, y, nx as u32, ny as u32)
                                         } else {
                                             (nx as u32, ny as u32, x, y)
@@ -487,7 +486,9 @@ impl SimulationState {
                             if !self.grid.in_bounds(nx, ny) {
                                 continue;
                             }
-                            self.grid.modify(nx as u32, ny as u32, |n| { n.temperature = n.temperature.saturating_add(100); });
+                            self.grid.modify(nx as u32, ny as u32, |n| {
+                                n.temperature = n.temperature.saturating_add(100);
+                            });
                         }
                     }
                 }
@@ -562,7 +563,9 @@ impl SimulationState {
                     }
                 } else if cell_id == CONTROL_ROD {
                     if rng.f32() < reactions::absorber_chance(CONTROL_ROD, ev.energy) {
-                        self.grid.modify(x, y, |rod| { rod.temperature = rod.temperature.saturating_add(45); });
+                        self.grid.modify(x, y, |rod| {
+                            rod.temperature = rod.temperature.saturating_add(45);
+                        });
                     }
                 } else if matches!(cell_id, XENON | IODINE) {
                     if rng.f32() < reactions::absorber_chance(cell_id, ev.energy) {
@@ -570,15 +573,12 @@ impl SimulationState {
                     }
                 } else if cell_id == LITHIUM && rng.f32() < reactions::LITHIUM_BREED_CHANCE {
                     // Li-6 + n -> T + He (simplified single-cell breeding)
-                    self.grid.set(
-                        x,
-                        y,
-                        Particle::new(TRITIUM, cell_temp.saturating_add(50)),
-                    );
-                    let hx = (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1)
-                        as u32;
-                    let hy = (y as i32 + rng.i32(-1..=1)).clamp(0, self.grid.height as i32 - 1)
-                        as u32;
+                    self.grid
+                        .set(x, y, Particle::new(TRITIUM, cell_temp.saturating_add(50)));
+                    let hx =
+                        (x as i32 + rng.i32(-1..=1)).clamp(0, self.grid.width as i32 - 1) as u32;
+                    let hy =
+                        (y as i32 + rng.i32(-1..=1)).clamp(0, self.grid.height as i32 - 1) as u32;
                     if self.grid.get(hx, hy).is_some_and(|p| p.is_empty()) {
                         self.grid.set(hx, hy, Particle::new(HELIUM, 400));
                     }
@@ -619,9 +619,7 @@ impl SimulationState {
 
         let active = self.chunk_pool.active_chunks();
         let cells: Vec<(u32, u32)> = if active.is_empty() {
-            (0..h)
-                .flat_map(|y| (0..w).map(move |x| (x, y)))
-                .collect()
+            (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).collect()
         } else {
             let cs = CHUNK_SIZE as u32;
             let mut out = Vec::new();
@@ -659,7 +657,8 @@ impl SimulationState {
                             continue;
                         }
                         let nid = self.grid.get(nx as u32, ny as u32).unwrap().element_id;
-                        if (id == DEUTERIUM && nid == TRITIUM) || (id == TRITIUM && nid == DEUTERIUM)
+                        if (id == DEUTERIUM && nid == TRITIUM)
+                            || (id == TRITIUM && nid == DEUTERIUM)
                         {
                             let (ax, ay, bx, by) = if (x, y) < (nx as u32, ny as u32) {
                                 (x, y, nx as u32, ny as u32)
@@ -694,7 +693,8 @@ impl SimulationState {
         }
         let mut product = Particle::new(
             FISSION_PRODUCTS,
-            orig.temperature.saturating_add(reactions::FISSION_SELF_HEAT),
+            orig.temperature
+                .saturating_add(reactions::FISSION_SELF_HEAT),
         );
         product.set_flag(Particle::FLAG_REACTED);
         self.grid.set(x, y, product);
@@ -791,7 +791,9 @@ impl SimulationState {
                 if !self.grid.in_bounds(nx, ny) {
                     continue;
                 }
-                self.grid.modify(nx as u32, ny as u32, |n| { n.temperature = n.temperature.saturating_add(reactions::FUSION_RADIUS_HEAT); });
+                self.grid.modify(nx as u32, ny as u32, |n| {
+                    n.temperature = n.temperature.saturating_add(reactions::FUSION_RADIUS_HEAT);
+                });
             }
         }
     }

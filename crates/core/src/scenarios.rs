@@ -119,7 +119,13 @@ fn setup_bomb(sim: &mut SimulationState) {
     for dy in -6..=6 {
         for dx in -6..=6 {
             if dx * dx + dy * dy <= 36 {
-                put(sim, (cx as i32 + dx) as u32, (cy as i32 + dy) as u32, PU239, 400);
+                put(
+                    sim,
+                    (cx as i32 + dx) as u32,
+                    (cy as i32 + dy) as u32,
+                    PU239,
+                    400,
+                );
             }
         }
     }

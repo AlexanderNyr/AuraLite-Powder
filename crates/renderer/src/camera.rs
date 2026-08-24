@@ -53,10 +53,7 @@ impl Camera {
             // cursor after zooming (previously the offset was unchanged because the
             // world point was computed with the *new* scale, anchoring zoom to the
             // world origin instead of the cursor).
-            self.offset = Vec2::new(
-                world.x - c.x / self.scale,
-                world.y - c.y / self.scale,
-            );
+            self.offset = Vec2::new(world.x - c.x / self.scale, world.y - c.y / self.scale);
         } else {
             self.scale = (self.scale * factor).clamp(0.1, 20.0);
         }

@@ -20,7 +20,12 @@ fn palette_332() -> [u8; 768] {
 }
 
 /// Encode RGBA frames (`w*h*4` each) into a looping GIF.
-pub fn encode_rgba_frames(frames: &[Vec<u8>], w: u16, h: u16, delay_cs: u16) -> io::Result<Vec<u8>> {
+pub fn encode_rgba_frames(
+    frames: &[Vec<u8>],
+    w: u16,
+    h: u16,
+    delay_cs: u16,
+) -> io::Result<Vec<u8>> {
     let mut out = Vec::new();
     out.extend_from_slice(b"GIF89a");
     out.extend_from_slice(&w.to_le_bytes());
@@ -246,7 +251,9 @@ mod tests {
         let palette: [[u8; 3]; 4] = [[200, 30, 30], [30, 200, 30], [30, 30, 200], [220, 220, 40]];
         let mut state: u64 = 0x9e3779b97f4a7c15;
         let mut next = || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (state >> 33) as u32
         };
         let raw: Vec<usize> = (0..(w as usize * h as usize))
@@ -286,6 +293,9 @@ mod tests {
         }
         let decoded = lzw_decode(&lzw, min_code).expect("LZW stream must decode");
         assert_eq!(decoded.len(), expected.len());
-        assert_eq!(decoded, expected, "round-tripped indices must match exactly");
+        assert_eq!(
+            decoded, expected,
+            "round-tripped indices must match exactly"
+        );
     }
 }

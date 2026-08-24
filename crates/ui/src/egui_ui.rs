@@ -136,14 +136,10 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
         app.simulation.reactor_status()
     ));
     if app.simulation.period_ticks.abs() > 0.5 {
-        ui.label(format!(
-            "Period: {:+.0} ticks",
-            app.simulation.period_ticks
-        ));
+        ui.label(format!("Period: {:+.0} ticks", app.simulation.period_ticks));
     }
     ui.label("Poison (I → Xe)");
-    let poison = (app.simulation.iodine_count as f32 * 0.4
-        + app.simulation.xenon_count as f32)
+    let poison = (app.simulation.iodine_count as f32 * 0.4 + app.simulation.xenon_count as f32)
         .min(80.0)
         / 80.0;
     ui.add(egui::ProgressBar::new(poison).text(format!(
@@ -248,9 +244,15 @@ pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
     }
     if app.mission.is_some() {
         ui.horizontal(|ui| {
-            if ui.button("Retry").clicked() { app.retry_mission(); }
-            if ui.button("Continue").clicked() { app.controller.paused = false; }
-            if ui.button("Abandon").clicked() { app.abandon_mission(); }
+            if ui.button("Retry").clicked() {
+                app.retry_mission();
+            }
+            if ui.button("Continue").clicked() {
+                app.controller.paused = false;
+            }
+            if ui.button("Abandon").clicked() {
+                app.abandon_mission();
+            }
         });
     }
 }
@@ -334,21 +336,42 @@ pub fn build_ui(ctx: &Context, app: &mut AppState) {
                 ui.label(format!("Step {} / 5", step + 1));
                 ui.separator();
                 match step {
-                    0 => { ui.label("Paint sand with hotbar key 1. Scroll-zoom, right-drag to pan."); }
-                    1 => { ui.label("Space pauses. C clears, Z undoes."); }
-                    2 => { ui.label("Load Bare reactor. Watch k-eff and the poison bar."); }
-                    3 => { ui.label("[ ] move rods. Try the Hold critical mission."); }
-                    4 => { ui.label("H overlay. Copy/Stamp. R records GIF. - / = brush size."); }
-                    _ => { ui.label("Missions and 256/512 grid are on the right."); }
+                    0 => {
+                        ui.label("Paint sand with hotbar key 1. Scroll-zoom, right-drag to pan.");
+                    }
+                    1 => {
+                        ui.label("Space pauses. C clears, Z undoes.");
+                    }
+                    2 => {
+                        ui.label("Load Bare reactor. Watch k-eff and the poison bar.");
+                    }
+                    3 => {
+                        ui.label("[ ] move rods. Try the Hold critical mission.");
+                    }
+                    4 => {
+                        ui.label("H overlay. Copy/Stamp. R records GIF. - / = brush size.");
+                    }
+                    _ => {
+                        ui.label("Missions and 256/512 grid are on the right.");
+                    }
                 }
                 ui.separator();
-                if ui.button("Next").clicked() { next = true; }
-                if ui.button("Skip").clicked() { skip = true; }
+                if ui.button("Next").clicked() {
+                    next = true;
+                }
+                if ui.button("Skip").clicked() {
+                    skip = true;
+                }
             });
         if next {
-            if app.tutorial_step < 5 { app.tutorial_step += 1; }
-            else { app.show_tutorial = false; }
+            if app.tutorial_step < 5 {
+                app.tutorial_step += 1;
+            } else {
+                app.show_tutorial = false;
+            }
         }
-        if skip { app.show_tutorial = false; }
+        if skip {
+            app.show_tutorial = false;
+        }
     }
 }

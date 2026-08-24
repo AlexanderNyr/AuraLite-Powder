@@ -35,9 +35,10 @@ impl Grid {
     pub fn with_particles(width: u32, height: u32, particles: Vec<Particle>) -> Self {
         let size = (width as usize) * (height as usize);
         let mut g = Self::new(width, height);
-        let n = particles.len().min(size);
-        for i in 0..n {
-            let p = particles[i];
+        for (i, p) in particles.iter().copied().enumerate() {
+            if i >= size {
+                break;
+            }
             g.element_ids[i] = p.element_id;
             g.temperatures[i] = p.temperature;
             g.flags[i] = p.flags;
@@ -59,6 +60,12 @@ impl Grid {
     #[inline]
     pub fn len(&self) -> usize {
         self.element_ids.len()
+    }
+
+    /// Whether the grid has zero cells.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.element_ids.is_empty()
     }
 
     // ── coordinate accessors ───────────────────────────────────────────────
@@ -193,15 +200,19 @@ impl Grid {
 
     /// Materialise an AoS `Vec<Particle>` — the serialize/clone/undo boundary.
     pub fn particles_vec(&self) -> Vec<Particle> {
-        (0..self.element_ids.len()).map(|i| self.particle_at(i)).collect()
+        (0..self.element_ids.len())
+            .map(|i| self.particle_at(i))
+            .collect()
     }
 
     /// Overwrite every cell from an AoS `Vec<Particle>` (undo restore). The vec
     /// length must equal `width * height`; shorter vecs leave trailing cells.
     pub fn set_particles_vec(&mut self, particles: &[Particle]) {
-        let n = particles.len().min(self.element_ids.len());
-        for i in 0..n {
-            self.set_particle_at(i, particles[i]);
+        for (i, p) in particles.iter().copied().enumerate() {
+            if i >= self.element_ids.len() {
+                break;
+            }
+            self.set_particle_at(i, p);
         }
     }
 
@@ -228,7 +239,10 @@ impl Grid {
     }
 
     pub fn count_non_empty(&self) -> usize {
-        self.element_ids.iter().filter(|&&id| id != crate::element_id::AIR).count()
+        self.element_ids
+            .iter()
+            .filter(|&&id| id != crate::element_id::AIR)
+            .count()
     }
 
     pub fn to_compact(&self) -> Vec<crate::particle::ParticleData> {

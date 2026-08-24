@@ -1,11 +1,11 @@
 //! Large-scale hydrodynamics on top of the cell CA:
 //! connected-surface leveling, hydrostatic pressure, hollow pipes, overburden.
 
+use crate::devices::PressureField;
 use crate::element_id::*;
 use crate::grid::Grid;
 use crate::particle::Particle;
 use crate::physics::VelocityField;
-use crate::devices::PressureField;
 
 /// Depth-scaled pressure for every liquid column. Sealed walls still block diffusion.
 pub fn add_hydrostatic_pressure(grid: &Grid, pressure: &mut PressureField) {
@@ -21,9 +21,7 @@ pub fn add_hydrostatic_pressure(grid: &Grid, pressure: &mut PressureField) {
                 depth = depth.saturating_add(1);
                 let add = (depth.saturating_mul(3)).min(40);
                 pressure.p[i] = pressure.p[i].saturating_add(add);
-            } else if is_static_solid(id) && !is_pipe(id) {
-                depth = 0;
-            } else if id == AIR || is_gas(id) {
+            } else if (is_static_solid(id) && !is_pipe(id)) || id == AIR || is_gas(id) {
                 depth = 0;
             }
         }
@@ -32,11 +30,7 @@ pub fn add_hydrostatic_pressure(grid: &Grid, pressure: &mut PressureField) {
 
 /// Move free-surface liquid cells toward a lower neighboring column.
 /// This is what makes a lake actually find a level on a large grid.
-pub fn equalize_liquid_surface(
-    grid: &mut Grid,
-    vel: &mut VelocityField,
-    rng: &mut fastrand::Rng,
-) {
+pub fn equalize_liquid_surface(grid: &mut Grid, vel: &mut VelocityField, rng: &mut fastrand::Rng) {
     let w = grid.width;
     let h = grid.height;
     vel.sync_len(grid.len());
@@ -59,7 +53,7 @@ pub fn equalize_liquid_surface(
             if !open_above {
                 continue;
             }
-            let look = flow_steps(id).max(2).min(8);
+            let look = flow_steps(id).clamp(2, 8);
             let mut best: Option<(u32, u32, i32)> = None;
             for sign in rand_lr(rng) {
                 for step in 1..=look {
@@ -128,10 +122,8 @@ pub fn step_pipe_network(
             let i = grid.index(x, y);
             match ids[i] {
                 PIPE => ingest_pipe(grid, vel, pressure, x, y, rng),
-                PIPE_WATER | PIPE_STEAM => {
-                    if !eject_pipe(grid, vel, pressure, x, y, rng) {
-                        hop_pipe(grid, vel, pressure, x, y, rng);
-                    }
+                PIPE_WATER | PIPE_STEAM if !eject_pipe(grid, vel, pressure, x, y, rng) => {
+                    hop_pipe(grid, vel, pressure, x, y, rng);
                 }
                 _ => {}
             }
@@ -223,11 +215,7 @@ fn eject_pipe(
     let Some((dx, dy)) = dest else {
         return false;
     };
-    let force = pressure
-        .p
-        .get(grid.index(x, y))
-        .copied()
-        .unwrap_or(0);
+    let force = pressure.p.get(grid.index(x, y)).copied().unwrap_or(0);
     if outlet.is_none() && force < 18 && rng.f32() > 0.15 {
         return false;
     }
@@ -299,11 +287,7 @@ fn count_pipe_neighbors(grid: &Grid, x: u32, y: u32) -> u32 {
 }
 
 /// Tall powder columns develop a weak lateral failure (landslide), not a liquid run.
-pub fn powder_overburden_slide(
-    grid: &mut Grid,
-    vel: &mut VelocityField,
-    rng: &mut fastrand::Rng,
-) {
+pub fn powder_overburden_slide(grid: &mut Grid, vel: &mut VelocityField, rng: &mut fastrand::Rng) {
     let w = grid.width;
     let h = grid.height;
     vel.sync_len(grid.len());

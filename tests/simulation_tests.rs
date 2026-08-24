@@ -93,15 +93,17 @@ fn test_boron_absorbs_neutrons() {
             energy: NeutronEnergy::Thermal,
         });
         sim.tick();
-        let has_fallout = (0..10).any(|y| {
-            (0..10).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(FALLOUT))
-        });
+        let has_fallout = (0..10)
+            .any(|y| (0..10).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(FALLOUT)));
         if has_fallout {
             absorbed = true;
             break;
         }
     }
-    assert!(absorbed, "Boron should absorb a queued thermal neutron in some seeds");
+    assert!(
+        absorbed,
+        "Boron should absorb a queued thermal neutron in some seeds"
+    );
 }
 
 #[test]
@@ -249,7 +251,10 @@ fn test_fusion_triggers_at_high_temp() {
             break;
         }
     }
-    assert!(fused, "D+T pairs at 2000 K should fuse in at least one seed");
+    assert!(
+        fused,
+        "D+T pairs at 2000 K should fuse in at least one seed"
+    );
 }
 
 #[test]
@@ -265,9 +270,8 @@ fn test_lithium_breeds_tritium() {
             energy: NeutronEnergy::Thermal,
         });
         sim.tick();
-        let found = (4..=6).any(|y| {
-            (4..=6).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(TRITIUM))
-        });
+        let found = (4..=6)
+            .any(|y| (4..=6).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(TRITIUM)));
         if found {
             bred = true;
             break;
@@ -448,9 +452,8 @@ fn test_water_boils_to_steam_then_can_condense() {
     let mut saw_steam = false;
     for _ in 0..40 {
         sim.tick();
-        saw_steam |= (0..12).any(|y| {
-            (0..12).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(STEAM))
-        });
+        saw_steam |= (0..12)
+            .any(|y| (0..12).any(|x| sim.grid.get(x, y).map(|p| p.element_id) == Some(STEAM)));
     }
     assert!(saw_steam, "hot water should boil into steam");
 }
@@ -499,8 +502,7 @@ fn test_scenario_bomb_places_plutonium() {
     sim.load_scenario(aura_lite_core::Scenario::Bomb);
     let pu = sim
         .grid
-        .particles
-        .iter()
+        .iter_particles()
         .filter(|p| p.element_id == PU239)
         .count();
     assert!(pu > 20, "bomb scene should pack a Pu pit, got {pu}");
@@ -547,12 +549,10 @@ fn test_filter_passes_water_not_sand() {
     for _ in 0..20 {
         sim.tick();
     }
-    let water_below = (0..8).any(|x| {
-        (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(WATER))
-    });
-    let sand_below = (0..8).any(|x| {
-        (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(SAND))
-    });
+    let water_below =
+        (0..8).any(|x| (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(WATER)));
+    let sand_below =
+        (0..8).any(|x| (6..9).any(|y| sim.grid.get(x, y).map(|p| p.element_id) == Some(SAND)));
     assert!(water_below, "water should pass through a filter");
     assert!(!sand_below, "sand should not pass through a filter");
 }
@@ -581,10 +581,7 @@ fn test_sensor_heats_with_criticality() {
 
 #[test]
 fn test_iodine_decays_toward_xenon() {
-    assert_eq!(
-        aura_lite_core::reactions::decay_daughter(IODINE),
-        XENON
-    );
+    assert_eq!(aura_lite_core::reactions::decay_daughter(IODINE), XENON);
     let mut saw = false;
     for seed in 0..8 {
         let mut sim = SimulationState::new(10, 10, seed);
@@ -596,13 +593,7 @@ fn test_iodine_decays_toward_xenon() {
         for _ in 0..900 {
             sim.tick();
         }
-        if sim.decay_count > 0
-            || sim
-                .grid
-                .particles
-                .iter()
-                .any(|p| p.element_id == XENON)
-        {
+        if sim.decay_count > 0 || sim.grid.iter_particles().any(|p| p.element_id == XENON) {
             saw = true;
             break;
         }
@@ -624,8 +615,7 @@ fn test_fire_dies_underwater() {
     }
     let fire = sim
         .grid
-        .particles
-        .iter()
+        .iter_particles()
         .filter(|p| p.element_id == FIRE)
         .count();
     assert_eq!(fire, 0, "fire should extinguish when fully flooded");
@@ -650,8 +640,7 @@ fn test_mission_hold_starts_with_fuel() {
     assert_eq!(m.status, aura_lite_core::MissionStatus::Running);
     let fuel = sim
         .grid
-        .particles
-        .iter()
+        .iter_particles()
         .filter(|p| p.element_id == U235)
         .count();
     assert!(fuel > 10, "hold mission should plant a U-235 pile");
@@ -666,7 +655,10 @@ fn test_mission_save_roundtrip() {
     let save = aura_lite_io::load_save_from_bytes(&bytes, false).unwrap();
     let mut loaded = SimulationState::new(48, 48, 0);
     save.apply_to(&mut loaded).unwrap();
-    let restored = loaded.mission.as_ref().and_then(aura_lite_core::Mission::from_save);
+    let restored = loaded
+        .mission
+        .as_ref()
+        .and_then(aura_lite_core::Mission::from_save);
     assert!(restored.is_some());
     assert_eq!(
         restored.unwrap().id,
@@ -677,10 +669,8 @@ fn test_mission_save_roundtrip() {
 #[test]
 fn test_mission_filter_rescue_can_win() {
     let mut sim = SimulationState::new(32, 32, 1);
-    let mut mission = aura_lite_core::Mission::start(
-        &mut sim,
-        aura_lite_core::MissionId::FilterRescue,
-    );
+    let mut mission =
+        aura_lite_core::Mission::start(&mut sim, aura_lite_core::MissionId::FilterRescue);
     for _ in 0..200 {
         sim.tick();
         mission.tick(&sim);
@@ -735,7 +725,9 @@ fn test_save_restores_pressure() {
 
 #[test]
 fn test_gif_encoder_writes_header() {
-    let frame = vec![255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255];
+    let frame = vec![
+        255u8, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+    ];
     let bytes = aura_lite_io::gif89a::encode_rgba_frames(&[frame], 2, 2, 5).unwrap();
     assert!(bytes.starts_with(b"GIF89a"));
     assert_eq!(*bytes.last().unwrap(), 0x3B);

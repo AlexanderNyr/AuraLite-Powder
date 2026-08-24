@@ -12,7 +12,8 @@ pub use backend::RenderBackend;
 pub use camera::Camera;
 pub use color_map::color_for_element;
 pub use compose::{
-    render_grid_with_glow, render_simulation, render_simulation_ex, stamp_preview, stroke_world_rect,
+    render_grid_with_glow, render_simulation, render_simulation_ex, stamp_preview,
+    stroke_world_rect,
 };
 pub use overlay::OverlayMode;
 

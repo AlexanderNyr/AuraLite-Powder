@@ -15,6 +15,30 @@ nothing of render/ui/io/wasm. No entry here may break that invariant —
 
 Work toward the ROADMAP phases, applied on top of the upstream `main`.
 
+### CI / build fixes — 2026-08-24
+*Deliverable: `patches/ci_green.patch`*
+
+- **Fixed** the CI `Fmt + Clippy` job: `cargo fmt --all` (the tree was not
+  fmt-clean) and resolved every `clippy -D warnings` lint the newer toolchain
+  raised (derivable `Default` impls, needless range loops, `clamp`/match-guard
+  idioms, `as_chunks`, `is_multiple_of`, `too_many_arguments` allows, etc.).
+- **Fixed** the CI `Test` job: it ran `cargo test --release`, but the release
+  profile (`lto + panic = "abort"`) is unsuitable for the test harness — tests
+  now run in the dev profile (`cargo test`); the release build is still
+  verified by the separate `cargo build --release` step.
+- **Fixed** the CI `Bench` job: `bench_record.py` parsed criterion's JSON for
+  the wrong reason string (`benchmark` vs `benchmark-complete`) and treated the
+  median as a bare number (criterion 0.5 emits a `{point_estimate}` object), so
+  it always parsed zero medians and failed. The parser now handles both shapes
+  and no longer fails CI on an empty parse.
+- **Hardened** the `Quench` mission's steel core (2×2) so its win threshold is
+  not flippable by f32-rounding differences between optimisation levels.
+- **Cleared** the Node.js 20 deprecation warnings by bumping
+  `actions/checkout`, `actions/cache`, `actions/upload-artifact` to v5.
+- **Verified** the WASM build end-to-end (`wasm-pack build --target web` → pkg
+  ready); it was not actually broken — the CI run was red on the three jobs
+  above, not on WASM.
+
 ### Phase P8 — Content: campaign + 8 missions — 2026-08-24  ✅
 *Deliverable: `patches/P8_content.patch` (baseline: through `P3_thermal.patch`)*
 

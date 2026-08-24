@@ -1,9 +1,7 @@
 //! P8 content gates (ROADMAP): the two new missions are winnable and the
 //! campaign unlock logic is correct.
 
-use aura_lite_core::{
-    Campaign, Mission, MissionId, MissionStatus, SimulationState,
-};
+use aura_lite_core::{Campaign, Mission, MissionId, MissionStatus, SimulationState};
 
 #[test]
 fn test_mission_tritium_breeder_wins() {
@@ -16,7 +14,12 @@ fn test_mission_tritium_breeder_wins() {
             break;
         }
     }
-    assert_eq!(mission.status, MissionStatus::Won, "tritium breeder: {}", mission.message);
+    assert_eq!(
+        mission.status,
+        MissionStatus::Won,
+        "tritium breeder: {}",
+        mission.message
+    );
 }
 
 #[test]
@@ -30,8 +33,18 @@ fn test_mission_quench_wins() {
             break;
         }
     }
-    assert_ne!(mission.status, MissionStatus::Failed, "quench failed: {}", mission.message);
-    assert_eq!(mission.status, MissionStatus::Won, "quench: {}", mission.message);
+    assert_ne!(
+        mission.status,
+        MissionStatus::Failed,
+        "quench failed: {}",
+        mission.message
+    );
+    assert_eq!(
+        mission.status,
+        MissionStatus::Won,
+        "quench: {}",
+        mission.message
+    );
 }
 
 #[test]
@@ -66,7 +79,12 @@ fn test_eight_missions_all_start() {
     for &m in MissionId::all() {
         let mut sim = SimulationState::new(96, 96, 7);
         let mission = Mission::start(&mut sim, m);
-        assert_eq!(mission.status, MissionStatus::Running, "{} did not start running", m.title());
+        assert_eq!(
+            mission.status,
+            MissionStatus::Running,
+            "{} did not start running",
+            m.title()
+        );
         assert!(!mission.message.is_empty());
     }
 }

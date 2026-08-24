@@ -54,21 +54,11 @@ impl ChunkMeta {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ChunkPool {
     pub chunks_x: u32,
     pub chunks_y: u32,
     pub metas: Vec<ChunkMeta>,
-}
-
-impl Default for ChunkPool {
-    fn default() -> Self {
-        Self {
-            chunks_x: 0,
-            chunks_y: 0,
-            metas: Vec::new(),
-        }
-    }
 }
 
 impl ChunkPool {

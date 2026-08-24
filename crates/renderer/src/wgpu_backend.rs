@@ -77,8 +77,8 @@ impl WgpuBackend {
             &wgpu::DeviceDescriptor {
                 label: Some("auralite-wgpu"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
+                required_limits:
+                    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
             },
             None,
         ));
@@ -161,9 +161,11 @@ impl WgpuBackend {
 
     /// Fullscreen-triangle blit into an off-screen target (same pass a swapchain would use).
     pub fn present_offscreen(&self) -> bool {
-        let (Some(device), Some(queue), Some(src)) =
-            (self.device.as_ref(), self.queue.as_ref(), self.texture.as_ref())
-        else {
+        let (Some(device), Some(queue), Some(src)) = (
+            self.device.as_ref(),
+            self.queue.as_ref(),
+            self.texture.as_ref(),
+        ) else {
             return false;
         };
         if !self.shader_validated {

@@ -9,19 +9,10 @@ use crate::reactions;
 
 /// Per-cell velocity, parallel to `Grid::particles`. Not stored in the particle
 /// itself so old save files stay compatible.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct VelocityField {
     pub vx: Vec<i8>,
     pub vy: Vec<i8>,
-}
-
-impl Default for VelocityField {
-    fn default() -> Self {
-        Self {
-            vx: Vec::new(),
-            vy: Vec::new(),
-        }
-    }
 }
 
 impl VelocityField {
@@ -127,13 +118,7 @@ fn shuffle_row(xs: &mut [u32], rng: &mut fastrand::Rng) {
     }
 }
 
-fn update_cell(
-    grid: &mut Grid,
-    vel: &mut VelocityField,
-    x: u32,
-    y: u32,
-    rng: &mut fastrand::Rng,
-) {
+fn update_cell(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, rng: &mut fastrand::Rng) {
     let Some(cur) = grid.get(x, y) else {
         return;
     };
@@ -303,13 +288,7 @@ fn update_liquid(
     }
 }
 
-fn update_gas(
-    grid: &mut Grid,
-    vel: &mut VelocityField,
-    x: u32,
-    y: u32,
-    rng: &mut fastrand::Rng,
-) {
+fn update_gas(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, rng: &mut fastrand::Rng) {
     let i = grid.index(x, y);
     let id = grid.element_at(i);
     let temp = grid.temperature_at(i);
@@ -328,7 +307,8 @@ fn update_gas(
         // Displace a heavier / colder gas above.
         if y > 0 {
             let above = grid.get(x, y - 1).unwrap();
-            if is_gas(above.element_id) && buoyancy(id, temp) > buoyancy(above.element_id, above.temperature)
+            if is_gas(above.element_id)
+                && buoyancy(id, temp) > buoyancy(above.element_id, above.temperature)
                 && rng.f32() < 0.7
             {
                 swap_cells(grid, vel, x, y, x, y - 1);
@@ -388,7 +368,10 @@ fn column_support(grid: &Grid, x: i32, y: u32) -> i32 {
         return 1000;
     }
     let xu = x as u32;
-    if grid.get(xu, y).is_some_and(|p| !p.is_empty() && !is_fluid(p.element_id)) {
+    if grid
+        .get(xu, y)
+        .is_some_and(|p| !p.is_empty() && !is_fluid(p.element_id))
+    {
         return 50;
     }
     let mut score = 0;
@@ -410,7 +393,13 @@ fn column_support(grid: &Grid, x: i32, y: u32) -> i32 {
     score
 }
 
-fn try_sink(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, rng: &mut fastrand::Rng) -> bool {
+fn try_sink(
+    grid: &mut Grid,
+    vel: &mut VelocityField,
+    x: u32,
+    y: u32,
+    rng: &mut fastrand::Rng,
+) -> bool {
     try_sink_at(grid, vel, x, y, x as i32, y as i32 + 1, rng)
 }
 
@@ -451,14 +440,7 @@ fn try_move(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, nx: u32, n
     try_move_i(grid, vel, x, y, nx as i32, ny as i32)
 }
 
-fn try_move_i(
-    grid: &mut Grid,
-    vel: &mut VelocityField,
-    x: u32,
-    y: u32,
-    nx: i32,
-    ny: i32,
-) -> bool {
+fn try_move_i(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, nx: i32, ny: i32) -> bool {
     if !grid.in_bounds(nx, ny) {
         return false;
     }
@@ -769,7 +751,9 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
                 WATER => {
                     if p.temperature < 273 && rng.f32() < 0.15 {
                         grid.set(x, y, Particle::new(ICE, p.temperature));
-                    } else if p.temperature > 373 && p.temperature <= reactions::BOIL_TEMP && rng.f32() < 0.20
+                    } else if p.temperature > 373
+                        && p.temperature <= reactions::BOIL_TEMP
+                        && rng.f32() < 0.20
                     {
                         #[cfg(not(feature = "thermal-pde"))]
                         grid.set(x, y, Particle::new(STEAM, p.temperature));
@@ -790,7 +774,9 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
                 HEAVY_WATER => {
                     if p.temperature < 277 && rng.f32() < 0.12 {
                         grid.set(x, y, Particle::new(ICE, p.temperature));
-                    } else if p.temperature > 375 && p.temperature <= reactions::BOIL_TEMP && rng.f32() < 0.18
+                    } else if p.temperature > 375
+                        && p.temperature <= reactions::BOIL_TEMP
+                        && rng.f32() < 0.18
                     {
                         grid.set(x, y, Particle::new(STEAM, p.temperature));
                     }
@@ -805,15 +791,11 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
                         grid.set(x, y, Particle::new(WATER, p.temperature));
                     }
                 }
-                PIPE_WATER => {
-                    if p.temperature > 373 && rng.f32() < 0.16 {
-                        grid.set(x, y, Particle::new(PIPE_STEAM, p.temperature));
-                    }
+                PIPE_WATER if p.temperature > 373 && rng.f32() < 0.16 => {
+                    grid.set(x, y, Particle::new(PIPE_STEAM, p.temperature));
                 }
-                PIPE_STEAM => {
-                    if p.temperature < 368 && rng.f32() < 0.14 {
-                        grid.set(x, y, Particle::new(PIPE_WATER, p.temperature));
-                    }
+                PIPE_STEAM if p.temperature < 368 && rng.f32() < 0.14 => {
+                    grid.set(x, y, Particle::new(PIPE_WATER, p.temperature));
                 }
                 _ => {}
             }

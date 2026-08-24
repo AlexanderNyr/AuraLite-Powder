@@ -4,11 +4,7 @@
 
 #![cfg(feature = "thermal-pde")]
 
-use aura_lite_core::{
-    element_id::*,
-    reactions,
-    NeutronEnergy, Particle, SimulationState,
-};
+use aura_lite_core::{element_id::*, reactions, NeutronEnergy, Particle, SimulationState};
 
 /// The unit-level statement of Doppler: fission probability must FALL as fuel
 /// temperature rises. (Under the default model it rises — so this test is
@@ -18,10 +14,19 @@ fn doppler_lowers_reactivity_at_high_temp() {
     let ambient = reactions::fission_probability(U235, NeutronEnergy::Thermal, 300);
     let warm = reactions::fission_probability(U235, NeutronEnergy::Thermal, 900);
     let hot = reactions::fission_probability(U235, NeutronEnergy::Thermal, 1600);
-    assert!(ambient > warm, "ambient {ambient} should exceed warm {warm}");
+    assert!(
+        ambient > warm,
+        "ambient {ambient} should exceed warm {warm}"
+    );
     assert!(warm > hot, "warm {warm} should exceed hot {hot}");
-    assert!(hot < 0.2, "very hot U-235 must be strongly suppressed, got {hot}");
-    assert!(ambient > 0.7, "ambient U-235 thermal fission should be near base 0.85, got {ambient}");
+    assert!(
+        hot < 0.2,
+        "very hot U-235 must be strongly suppressed, got {hot}"
+    );
+    assert!(
+        ambient > 0.7,
+        "ambient U-235 thermal fission should be near base 0.85, got {ambient}"
+    );
 }
 
 /// The integration gate: a graphite-moderated pile, lit with no control rods,
@@ -69,7 +74,10 @@ fn self_limiting_pile() {
         .iter()
         .filter(|&&id| id == MOLTEN_FUEL)
         .count();
-    assert!(sim.fission_count > 10, "the moderated pile must sustain a chain");
+    assert!(
+        sim.fission_count > 10,
+        "the moderated pile must sustain a chain"
+    );
     assert_eq!(molten, 0, "Doppler must prevent meltdown (no molten fuel)");
     assert!(
         peak < 3500,

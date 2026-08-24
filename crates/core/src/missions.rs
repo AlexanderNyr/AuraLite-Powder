@@ -107,12 +107,12 @@ impl MissionId {
             MissionId::ForestFire => {
                 "Paint water on the fire. A pond is on the left. Keep most of the wood."
             }
-            MissionId::CoolantLoop => {
-                "Let the loop run 12 s. Losing up to four pipes is OK."
-            }
+            MissionId::CoolantLoop => "Let the loop run 12 s. Losing up to four pipes is OK.",
             MissionId::WireShot => "Paint Spark (hotbar) on the free wire end to set off the TNT.",
             MissionId::FilterRescue => "Water must fall through the filter. Sand stays on top.",
-            MissionId::TritiumBreeder => "Lithium breeds tritium under neutron flux. Reach 15 tritium atoms.",
+            MissionId::TritiumBreeder => {
+                "Lithium breeds tritium under neutron flux. Reach 15 tritium atoms."
+            }
             MissionId::Quench => "Submerge the hot core in water and cool it below 900 K.",
         }
     }
@@ -506,12 +506,13 @@ fn setup_tritium_breeder(sim: &mut SimulationState) {
     let mut i = 0u8;
     for y in (cy - 4)..(cy + 4) {
         for x in (cx - 12)..(cx + 12) {
-            sim.neutron_queue.push_back(crate::simulation::NeutronEvent {
-                x: x as u32,
-                y: y as u32,
-                delay: i % 4,
-                energy: crate::reactions::NeutronEnergy::Thermal,
-            });
+            sim.neutron_queue
+                .push_back(crate::simulation::NeutronEvent {
+                    x,
+                    y,
+                    delay: i % 4,
+                    energy: crate::reactions::NeutronEnergy::Thermal,
+                });
             i = i.wrapping_add(1);
         }
     }
@@ -529,9 +530,11 @@ fn setup_quench(sim: &mut SimulationState) {
     }
     let cx = w / 2;
     let cy = h / 2;
-    // A small glowing-hot steel core (small enough that the pool can quench it).
-    for y in (cy - 1)..(cy + 2) {
-        for x in (cx - 1)..(cx + 2) {
+    // A small glowing-hot steel core. Kept tiny (2x2) so the pool's thermal
+    // mass quenches it well under the 900 K target — with margin, so f32
+    // rounding differences between optimisation levels can't flip the gate.
+    for y in (cy - 1)..(cy + 1) {
+        for x in (cx - 1)..(cx + 1) {
             put(sim, x, y, STEEL, 2400);
         }
     }

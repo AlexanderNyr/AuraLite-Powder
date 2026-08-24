@@ -14,7 +14,7 @@ jobs:
     name: Fmt + Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -31,7 +31,7 @@ jobs:
     name: Claim checker (ROADMAP §1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Assert measured numbers + layering invariant
         run: python3 ci/check_powder_claims.py
 
@@ -39,7 +39,7 @@ jobs:
     name: Test (unit + integration + P0 rig)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux dependencies
         run: |
@@ -48,7 +48,7 @@ jobs:
       - name: Build (release)
         run: cargo build --release
       - name: Test
-        run: cargo test --release
+        run: cargo test
       - name: Check headless mode
         run: cargo run --release --no-default-features
 
@@ -56,7 +56,7 @@ jobs:
     name: Bench record + regression
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
@@ -65,7 +65,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxcb1-dev libxkbcommon-dev libwayland-dev
       - name: Restore baseline
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: bench/baseline.csv
           key: bench-baseline-${{ runner.os }}
@@ -73,7 +73,7 @@ jobs:
         run: python3 ci/bench_record.py --record
       - name: Upload bench log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bench-csv
           path: bench/
@@ -82,7 +82,7 @@ jobs:
     name: WASM build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

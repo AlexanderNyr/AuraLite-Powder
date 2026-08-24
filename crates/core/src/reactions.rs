@@ -255,6 +255,9 @@ mod tests {
         assert_eq!(decay_daughter(IODINE), XENON);
         assert_eq!(decay_radiation(IODINE), AIR);
         assert!(half_life_ticks(IODINE) < half_life_ticks(XENON));
-        assert!(absorber_chance(IODINE, NeutronEnergy::Thermal) < absorber_chance(XENON, NeutronEnergy::Thermal));
+        assert!(
+            absorber_chance(IODINE, NeutronEnergy::Thermal)
+                < absorber_chance(XENON, NeutronEnergy::Thermal)
+        );
     }
 }
