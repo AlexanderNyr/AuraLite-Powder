@@ -15,6 +15,24 @@ nothing of render/ui/io/wasm. No entry here may break that invariant —
 
 Work toward the ROADMAP phases, applied on top of the upstream `main`.
 
+### Phase P9a — Hardening: headless replay + long-run hash — 2026-08-24  ✅
+*Deliverable: `patches/P9a_replay.patch` (baseline: through `ci_green.patch`)*
+
+- **Added** `aura_lite_io::replay` — `replay_hash(&mut sim, ticks)`,
+  `grid_layout_hash(&grid)`, and `replay_save_bytes(bytes, ticks)`: run a
+  simulation forward deterministically and reduce the final grid to a hash.
+- **Added** the long-run regression gate `replay_hash_stable_1000_ticks`
+  (`tests/p9_replay.rs`): a 1 000-tick layout hash (baked
+  `0x86bf17c0b45557f3`). This complements the short P0 golden corpus — any
+  model change that alters the long-run element layout flips the hash. The hash
+  covers **element ids only** (temperatures excluded) so it is stable across
+  dev/release builds despite the heat solver's f32 rounding; verified identical
+  in dev and release.
+- **Added** `examples/replay.rs` — a headless tool that loads a `.aura` save,
+  runs N ticks, and prints the layout hash (for reproducible bug reports).
+- **Test gate:** 1 000-tick hash identical dev↔release; `replay_hash` is
+  deterministic; 70 default tests green; fmt + clippy clean.
+
 ### CI / build fixes — 2026-08-24
 *Deliverable: `patches/ci_green.patch`*
 

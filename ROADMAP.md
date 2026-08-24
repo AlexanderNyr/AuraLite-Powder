@@ -20,7 +20,8 @@
 | P6 | GPU pipeline: real wgpu present + optional compute | `patches/P6_gpu.patch` | 4 KTester frames at 60 FPS on integrated GPU; compute path opt-in | ☐ |
 | P7 | UI/UX: egui-on-GPU, modding, tools | `patches/P7_ui.patch` | Plugin element loads from JSON; line tool has a live preview | ☐ |
 | P8 | Content: campaign + 8 missions | `patches/P8_content.patch` | 8-mission campaign fully winnable & tested; unlock logic correct | ✅ |
-| P9 | Hardening: saves v3, replay, fuzz, WASM threads | `patches/P9_hardening.patch` | Headless replay bit-identical 1 000 ticks; WASM 2-thread ≥ 1.6× 1-thread | ☐ |
+| P9a | Hardening: headless replay + long-run hash | `patches/P9a_replay.patch` | 1 000-tick layout hash stable across dev/release builds | ✅ |
+| P9b | Hardening: fuzz + save v3 + WASM threads | `patches/P9b_hardening.patch` | fuzzers clean; save v3 migrates v2; WASM 2-thread ≥ 1.6× 1-thread | ☐ |
 
 > One `.patch` per phase, dependency-ordered, a definition of done and a test
 > gate for every phase — the structure `ARM64_PLAN.md` / `BOOTLOADER_ROADMAP.md`
