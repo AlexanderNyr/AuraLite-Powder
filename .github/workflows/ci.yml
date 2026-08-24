@@ -10,66 +10,86 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
-    name: Build & Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libwayland-dev
-
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Clippy (deny warnings)
-        run: cargo clippy -- -D warnings
-
-      - name: Build (release)
-        run: cargo build --release
-
-      - name: Test
-        run: cargo test --release
-
-      - name: Build with all features
-        run: cargo build --release --all-features || echo "Some feature combinations may not compile on all platforms"
-
-      - name: Check headless mode
-        run: cargo run --release --no-default-features
-
-  wasm-build:
-    name: WASM Build
+  lint:
+    name: Fmt + Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libwayland-dev
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  claims:
+    name: Claim checker (ROADMAP §1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert measured numbers + layering invariant
+        run: python3 ci/check_powder_claims.py
+
+  test:
+    name: Test (unit + integration + P0 rig)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libwayland-dev
+      - name: Build (release)
+        run: cargo build --release
+      - name: Test
+        run: cargo test --release
+      - name: Check headless mode
+        run: cargo run --release --no-default-features
+
+  bench:
+    name: Bench record + regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libwayland-dev
+      - name: Restore baseline
+        uses: actions/cache@v4
+        with:
+          path: bench/baseline.csv
+          key: bench-baseline-${{ runner.os }}
+      - name: Run benches + compare
+        run: python3 ci/bench_record.py --record
+      - name: Upload bench log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-csv
+          path: bench/
+
+  wasm:
+    name: WASM build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
       - name: Install wasm-pack
-        run: |
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build WASM
-        run: |
-          cd wasm
-          wasm-pack build --target web
-
+        run: cd wasm && wasm-pack build --target web
       - name: Verify output
         run: |
           ls -la wasm/pkg/
