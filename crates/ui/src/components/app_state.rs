@@ -304,7 +304,30 @@ impl AppState {
 
     pub fn start_mission(&mut self, id: MissionId) {
         self.push_undo();
-        self.mission = Some(Mission::start(&mut self.simulation, id));
+        self.controller.paused = false;
+        let m = Mission::start(&mut self.simulation, id);
+        self.simulation.mission = Some(m.to_save());
+        self.mission = Some(m);
+    }
+
+    pub fn retry_mission(&mut self) {
+        if let Some(id) = self.mission.as_ref().map(|m| m.id) {
+            self.start_mission(id);
+        }
+    }
+
+    pub fn abandon_mission(&mut self) {
+        self.mission = None;
+        self.simulation.mission = None;
+        self.controller.paused = false;
+    }
+
+    pub fn sync_mission_from_save(&mut self) {
+        self.mission = self
+            .simulation
+            .mission
+            .as_ref()
+            .and_then(Mission::from_save);
     }
 
     pub fn resize_grid(&mut self, w: u32, h: u32) {

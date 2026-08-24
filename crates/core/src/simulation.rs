@@ -64,6 +64,8 @@ pub struct SimulationState {
     pub iodine_count: u32,
     #[serde(default)]
     pub xenon_count: u32,
+    #[serde(default)]
+    pub mission: Option<crate::missions::MissionSave>,
     #[serde(skip, default)]
     fission_at_last_hud: u64,
     #[serde(skip, default)]
@@ -93,6 +95,7 @@ impl SimulationState {
             trend: 0,
             iodine_count: 0,
             xenon_count: 0,
+            mission: None,
             fission_at_last_hud: 0,
             chunk_pool: ChunkPool::new(width, height),
             velocities: VelocityField::new((width * height) as usize),

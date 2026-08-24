@@ -246,8 +246,12 @@ pub fn show_simulation_controller(ui: &mut Ui, app: &mut AppState) {
         };
         ui.colored_label(color, &m.message);
     }
-    if app.mission.is_some() && ui.button("Abandon mission").clicked() {
-        app.mission = None;
+    if app.mission.is_some() {
+        ui.horizontal(|ui| {
+            if ui.button("Retry").clicked() { app.retry_mission(); }
+            if ui.button("Continue").clicked() { app.controller.paused = false; }
+            if ui.button("Abandon").clicked() { app.abandon_mission(); }
+        });
     }
 }
 
@@ -280,6 +284,7 @@ pub fn show_save_load(ui: &mut Ui, app: &mut AppState) {
             {
                 if let Ok(save) = aura_lite_io::load_save_from_file(&path) {
                     if save.apply_to(&mut app.simulation).is_ok() {
+                        app.sync_mission_from_save();
                         app.save_load.last_save_path = Some(path.display().to_string());
                     }
                 }
@@ -309,6 +314,15 @@ pub fn build_ui(ctx: &Context, app: &mut AppState) {
     });
     egui::TopBottomPanel::top("top").show(ctx, |ui| {
         ui.heading("AuraLite Powder - Nuclear Falling Sand");
+        if let Some(m) = &app.mission {
+            let color = match m.status {
+                aura_lite_core::MissionStatus::Won => egui::Color32::from_rgb(80, 200, 80),
+                aura_lite_core::MissionStatus::Failed => egui::Color32::from_rgb(220, 70, 70),
+                aura_lite_core::MissionStatus::Running => egui::Color32::from_rgb(240, 220, 90),
+            };
+            ui.colored_label(color, format!("{} — {}", m.id.title(), m.id.brief()));
+            ui.colored_label(color, &m.message);
+        }
     });
     if app.show_tutorial {
         let step = app.tutorial_step;

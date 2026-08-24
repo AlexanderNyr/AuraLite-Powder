@@ -644,6 +644,37 @@ fn test_reactor_hud_fields_exist() {
 }
 
 #[test]
+fn test_mission_hold_starts_with_fuel() {
+    let mut sim = SimulationState::new(64, 64, 1);
+    let m = aura_lite_core::Mission::start(&mut sim, aura_lite_core::MissionId::HoldCritical);
+    assert_eq!(m.status, aura_lite_core::MissionStatus::Running);
+    let fuel = sim
+        .grid
+        .particles
+        .iter()
+        .filter(|p| p.element_id == U235)
+        .count();
+    assert!(fuel > 10, "hold mission should plant a U-235 pile");
+}
+
+#[test]
+fn test_mission_save_roundtrip() {
+    let mut sim = SimulationState::new(48, 48, 2);
+    let m = aura_lite_core::Mission::start(&mut sim, aura_lite_core::MissionId::FilterRescue);
+    sim.mission = Some(m.to_save());
+    let bytes = aura_lite_io::save_simulation_to_bytes(&sim, false).unwrap();
+    let save = aura_lite_io::load_save_from_bytes(&bytes, false).unwrap();
+    let mut loaded = SimulationState::new(48, 48, 0);
+    save.apply_to(&mut loaded).unwrap();
+    let restored = loaded.mission.as_ref().and_then(aura_lite_core::Mission::from_save);
+    assert!(restored.is_some());
+    assert_eq!(
+        restored.unwrap().id,
+        aura_lite_core::MissionId::FilterRescue
+    );
+}
+
+#[test]
 fn test_mission_filter_rescue_can_win() {
     let mut sim = SimulationState::new(32, 32, 1);
     let mut mission = aura_lite_core::Mission::start(

@@ -38,6 +38,8 @@ pub struct SaveFile {
     pub pressure: Vec<u16>,
     #[serde(default)]
     pub power: f32,
+    #[serde(default)]
+    pub mission: Option<aura_lite_core::MissionSave>,
 }
 
 /// On-disk layout used by version-1 `.aura` files (no simulation counters).
@@ -76,6 +78,7 @@ impl From<SaveFileV1> for SaveFile {
             vel_y: Vec::new(),
             pressure: Vec::new(),
             power: 0.0,
+            mission: None,
         }
     }
 }
@@ -116,6 +119,7 @@ impl SaveFile {
             vel_y: Vec::new(),
             pressure: Vec::new(),
             power: 0.0,
+            mission: None,
         }
     }
 
@@ -131,6 +135,7 @@ impl SaveFile {
         save.vel_y = sim.velocities.vy.clone();
         save.pressure = sim.pressure.p.clone();
         save.power = sim.power;
+        save.mission = sim.mission.clone();
         save
     }
 
@@ -167,6 +172,7 @@ impl SaveFile {
         sim.fusion_count = self.fusion_count;
         sim.decay_count = self.decay_count;
         sim.power = self.power;
+        sim.mission = self.mission.clone();
         let n = sim.grid.particles.len();
         sim.velocities.sync_len(n);
         if self.vel_x.len() == n && self.vel_y.len() == n {

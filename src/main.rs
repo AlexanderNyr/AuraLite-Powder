@@ -408,9 +408,19 @@ fn run_with_softbuffer() -> anyhow::Result<()> {
                 let target_tick = Duration::from_secs_f64(1.0 / app_state.controller.tick_rate as f64);
                 while tick_accumulator >= target_tick {
                     if !app_state.controller.paused {
+                        let prev = app_state
+                            .mission
+                            .as_ref()
+                            .map(|m| m.status);
                         app_state.simulation.tick();
                         if let Some(m) = app_state.mission.as_mut() {
                             m.tick(&app_state.simulation);
+                            app_state.simulation.mission = Some(m.to_save());
+                            if prev == Some(aura_lite_core::MissionStatus::Running)
+                                && m.status != aura_lite_core::MissionStatus::Running
+                            {
+                                app_state.controller.paused = true;
+                            }
                         }
                     }
                     tick_accumulator -= target_tick;
