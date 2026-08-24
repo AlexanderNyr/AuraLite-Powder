@@ -48,7 +48,7 @@ pub fn render_simulation_ex(
             let gy = world.y.floor() as i32;
             if gx >= 0 && gy >= 0 && (gx as usize) < gw && (gy as usize) < gh {
                 let gidx = gy as usize * gw + gx as usize;
-                let p = sim.grid.particles[gidx];
+                let p = sim.grid.particle_at(gidx);
                 let mut col = if let Some(ov) = overlay_color(sim, gidx, overlay) {
                     ov
                 } else if p.is_empty() {
@@ -148,7 +148,7 @@ pub fn render_grid_with_glow(sim: &SimulationState) -> Vec<u8> {
     let w = sim.grid.width as usize;
     let h = sim.grid.height as usize;
     let mut buf = vec![0u8; w * h * 4];
-    for (i, p) in sim.grid.particles.iter().enumerate() {
+    for (i, p) in sim.grid.iter_particles().enumerate() {
         let base = i * 4;
         let mut col = if p.is_empty() {
             [EMPTY_RGB[0], EMPTY_RGB[1], EMPTY_RGB[2], 255]

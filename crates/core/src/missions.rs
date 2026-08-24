@@ -283,8 +283,7 @@ impl Mission {
 
 fn count(sim: &SimulationState, id: u16) -> u32 {
     sim.grid
-        .particles
-        .iter()
+        .iter_particles()
         .filter(|p| p.element_id == id)
         .count() as u32
 }
@@ -401,9 +400,9 @@ fn setup_loop(sim: &mut SimulationState) {
     for y in 0..h {
         for x in 0..w {
             if sim.grid.get(x, y).map(|p| p.element_id) == Some(HEATER) {
-                if let Some(p) = sim.grid.get_mut(x, y) {
+                sim.grid.modify(x, y, |p| {
                     p.temperature = 900;
-                }
+                });
             }
         }
     }

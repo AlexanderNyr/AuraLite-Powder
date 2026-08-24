@@ -31,12 +31,12 @@ pub fn step_devices(
 ) {
     let w = grid.width;
     let h = grid.height;
-    let len = grid.particles.len();
+    let len = grid.len();
     pressure.sync_len(len);
     vel.sync_len(len);
 
-    let ids: Vec<u16> = grid.particles.iter().map(|p| p.element_id).collect();
-    let lives: Vec<u8> = grid.particles.iter().map(|p| p.lifetime).collect();
+    let ids: Vec<u16> = grid.iter_particles().map(|p| p.element_id).collect();
+    let lives: Vec<u8> = grid.iter_particles().map(|p| p.lifetime).collect();
 
     let cells: Vec<(u32, u32)> = if let Some(pool) = pool {
         let chunks = pool.expanded_active(1);
@@ -75,12 +75,12 @@ pub fn step_devices(
             }
             ACID => tick_acid(grid, x, y, rng),
             WOOD | COAL => {
-                if grid.particles[i].temperature > 650 && rng.f32() < 0.08 {
-                    grid.set(x, y, Particle::new(FIRE, grid.particles[i].temperature));
+                if grid.temperature_at(i) > 650 && rng.f32() < 0.08 {
+                    grid.set(x, y, Particle::new(FIRE, grid.temperature_at(i)));
                 }
             }
             HYDROGEN => {
-                if grid.particles[i].temperature > 750 && rng.f32() < 0.04 {
+                if grid.temperature_at(i) > 750 && rng.f32() < 0.04 {
                     grid.set(x, y, Particle::new(FIRE, 1200));
                     pressure.p[i] = pressure.p[i].saturating_add(20);
                 }
@@ -90,8 +90,8 @@ pub fn step_devices(
             SENSOR => tick_sensor(grid, x, y, k_eff, rng),
             FILTER => tick_filter(grid, vel, x, y),
             CONTROL_ROD => {
-                if grid.particles[i].temperature > 1600 && rng.f32() < 0.06 {
-                    grid.set(x, y, Particle::new(SLAG, grid.particles[i].temperature));
+                if grid.temperature_at(i) > 1600 && rng.f32() < 0.06 {
+                    grid.set(x, y, Particle::new(SLAG, grid.temperature_at(i)));
                 }
             }
             STEAM => {
@@ -111,12 +111,10 @@ fn heat_around(grid: &mut Grid, x: u32, y: u32, delta: u16) {
         for dx in -1..=1_i32 {
             let nx = x as i32 + dx;
             let ny = y as i32 + dy;
-            if let Some(n) = grid
-                .in_bounds(nx, ny)
-                .then(|| grid.get_mut(nx as u32, ny as u32))
-                .flatten()
-            {
-                n.temperature = n.temperature.saturating_add(delta);
+            if grid.in_bounds(nx, ny) {
+                grid.modify(nx as u32, ny as u32, |n| {
+                    n.temperature = n.temperature.saturating_add(delta);
+                });
             }
         }
     }
@@ -132,8 +130,8 @@ fn pump_fluid(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         if !grid.in_bounds(fx, fy) || !grid.in_bounds(tx, ty) {
             continue;
         }
-        let from = *grid.get(fx as u32, fy as u32).unwrap();
-        let to = *grid.get(tx as u32, ty as u32).unwrap();
+        let from = grid.get(fx as u32, fy as u32).unwrap();
+        let to = grid.get(tx as u32, ty as u32).unwrap();
         if !is_fluid(from.element_id) {
             continue;
         }
@@ -141,7 +139,7 @@ fn pump_fluid(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
             let ia = grid.index(fx as u32, fy as u32);
             grid.set(tx as u32, ty as u32, Particle::new(pipe_with(from.element_id), from.temperature));
             grid.set(fx as u32, fy as u32, Particle::air());
-            if vel.vx.len() == grid.particles.len() {
+            if vel.vx.len() == grid.len() {
                 vel.vx[grid.index(tx as u32, ty as u32)] = (-dx as i8).clamp(-2, 2);
                 vel.vy[grid.index(tx as u32, ty as u32)] = (-dy as i8).clamp(-2, 2);
                 vel.vx[ia] = 0;
@@ -154,8 +152,8 @@ fn pump_fluid(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         }
         let ia = grid.index(fx as u32, fy as u32);
         let ib = grid.index(tx as u32, ty as u32);
-        grid.particles.swap(ia, ib);
-        if vel.vx.len() == grid.particles.len() {
+        grid.swap_particles(ia, ib);
+        if vel.vx.len() == grid.len() {
             vel.vx.swap(ia, ib);
             vel.vy.swap(ia, ib);
             vel.vx[ib] = (-dx as i8).clamp(-2, 2);
@@ -172,7 +170,7 @@ fn tick_fire(
     y: u32,
     rng: &mut fastrand::Rng,
 ) {
-    let p = *grid.get(x, y).unwrap();
+    let p = grid.get(x, y).unwrap();
     let life = p.lifetime.saturating_add(1);
     let mut air = 0u32;
     let mut wet = false;
@@ -187,7 +185,7 @@ fn tick_fire(
             if !grid.in_bounds(nx, ny) {
                 continue;
             }
-            let n = *grid.get(nx as u32, ny as u32).unwrap();
+            let n = grid.get(nx as u32, ny as u32).unwrap();
             if n.is_empty() {
                 air += 1;
             } else if matches!(n.element_id, WATER | HEAVY_WATER | STEAM) {
@@ -210,10 +208,8 @@ fn tick_fire(
         grid.set(x, y, Particle::air());
         return;
     }
-    if let Some(c) = grid.get_mut(x, y) {
-        c.lifetime = life;
-        c.temperature = c.temperature.saturating_add(12);
-    }
+    grid.modify(x, y, |c| { c.lifetime = life;
+        c.temperature = c.temperature.saturating_add(12); });
     if fuel_h2 {
         let i = grid.index(x, y);
         if i < pressure.p.len() {
@@ -230,23 +226,23 @@ fn tick_fire(
             if !grid.in_bounds(nx, ny) {
                 continue;
             }
-            let n = *grid.get(nx as u32, ny as u32).unwrap();
+            let n = grid.get(nx as u32, ny as u32).unwrap();
             if n.element_id == HYDROGEN && rng.f32() < 0.55 {
                 grid.set(nx as u32, ny as u32, Particle::new(FIRE, 1300).with_lifetime(0));
                 continue;
             }
             if is_flammable(n.element_id) && rng.f32() < 0.18 {
                 if n.element_id == TNT {
-                    if let Some(t) = grid.get_mut(nx as u32, ny as u32) {
-                        t.temperature = t.temperature.saturating_add(80);
-                    }
+                    grid.modify(nx as u32, ny as u32, |t| { t.temperature = t.temperature.saturating_add(80); });
                 } else {
                     grid.set(nx as u32, ny as u32, Particle::new(FIRE, 1100).with_lifetime(0));
                 }
             } else if n.is_empty() && air > 0 && rng.f32() < 0.04 {
                 grid.set(nx as u32, ny as u32, Particle::new(FIRE, 900).with_lifetime(0));
-            } else if let Some(t) = grid.get_mut(nx as u32, ny as u32) {
-                t.temperature = t.temperature.saturating_add(8);
+            } else {
+                grid.modify(nx as u32, ny as u32, |t| {
+                    t.temperature = t.temperature.saturating_add(8);
+                });
             }
         }
     }
@@ -273,14 +269,12 @@ fn tick_acid(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
 }
 
 fn tick_spark(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
-    let p = *grid.get(x, y).unwrap();
+    let p = grid.get(x, y).unwrap();
     if p.lifetime > 4 {
         grid.set(x, y, Particle::air());
         return;
     }
-    if let Some(c) = grid.get_mut(x, y) {
-        c.lifetime = c.lifetime.saturating_add(1);
-    }
+    grid.modify(x, y, |c| { c.lifetime = c.lifetime.saturating_add(1); });
     // Charge neighbouring wire — the pulse then walks along the cable.
     for dy in -1..=1_i32 {
         for dx in -1..=1_i32 {
@@ -292,12 +286,12 @@ fn tick_spark(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
             if !grid.in_bounds(nx, ny) {
                 continue;
             }
-            if let Some(n) = grid.get_mut(nx as u32, ny as u32) {
+            grid.modify(nx as u32, ny as u32, |n| {
                 if n.element_id == WIRE && n.lifetime == 0 {
                     n.lifetime = 8;
                     n.temperature = n.temperature.saturating_add(20);
                 }
-            }
+            });
         }
     }
     if rng.f32() < 0.04 {
@@ -341,31 +335,25 @@ fn tick_wire(
             if !grid.in_bounds(nx, ny) {
                 continue;
             }
-            let n = *grid.get(nx as u32, ny as u32).unwrap();
+            let n = grid.get(nx as u32, ny as u32).unwrap();
             match n.element_id {
                 WIRE if n.lifetime == 0 => {
-                    if let Some(w) = grid.get_mut(nx as u32, ny as u32) {
-                        w.lifetime = snap_life.saturating_sub(1).max(1);
-                        w.temperature = w.temperature.saturating_add(12);
-                    }
+                    grid.modify(nx as u32, ny as u32, |w| { w.lifetime = snap_life.saturating_sub(1).max(1);
+                        w.temperature = w.temperature.saturating_add(12); });
                 }
                 HEATER => {
                     heat_around(grid, nx as u32, ny as u32, 30);
                 }
                 PUMP => pump_fluid(grid, vel, nx as u32, ny as u32),
                 TNT => {
-                    if let Some(t) = grid.get_mut(nx as u32, ny as u32) {
-                        t.temperature = t.temperature.saturating_add(120);
-                    }
+                    grid.modify(nx as u32, ny as u32, |t| { t.temperature = t.temperature.saturating_add(120); });
                 }
                 _ => {}
             }
         }
     }
-    if let Some(w) = grid.get_mut(x, y) {
-        w.lifetime = snap_life.saturating_sub(1);
-        w.temperature = w.temperature.saturating_add(6);
-    }
+    grid.modify(x, y, |w| { w.lifetime = snap_life.saturating_sub(1);
+        w.temperature = w.temperature.saturating_add(6); });
     let _ = rng;
 }
 
@@ -388,9 +376,7 @@ fn tick_sensor(grid: &mut Grid, x: u32, y: u32, k_eff: f32, rng: &mut fastrand::
     let t = 293u16
         .saturating_add(flux.saturating_mul(45))
         .saturating_add((k_eff * 220.0) as u16);
-    if let Some(s) = grid.get_mut(x, y) {
-        s.temperature = t;
-    }
+    grid.modify(x, y, |s| { s.temperature = t; });
     let tripped = k_eff > 1.05 || flux >= 3;
     if tripped && rng.f32() < 0.25 {
         for dy in -1..=1_i32 {
@@ -403,7 +389,7 @@ fn tick_sensor(grid: &mut Grid, x: u32, y: u32, k_eff: f32, rng: &mut fastrand::
                 if !grid.in_bounds(nx, ny) {
                     continue;
                 }
-                let n = *grid.get(nx as u32, ny as u32).unwrap();
+                let n = grid.get(nx as u32, ny as u32).unwrap();
                 if n.is_empty() {
                     grid.set(
                         nx as u32,
@@ -413,9 +399,7 @@ fn tick_sensor(grid: &mut Grid, x: u32, y: u32, k_eff: f32, rng: &mut fastrand::
                     return;
                 }
                 if n.element_id == WIRE && n.lifetime == 0 {
-                    if let Some(w) = grid.get_mut(nx as u32, ny as u32) {
-                        w.lifetime = 8;
-                    }
+                    grid.modify(nx as u32, ny as u32, |w| { w.lifetime = 8; });
                     return;
                 }
             }
@@ -433,8 +417,8 @@ fn tick_filter(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         if !grid.in_bounds(fx, fy) || !grid.in_bounds(tx, ty) {
             continue;
         }
-        let from = *grid.get(fx as u32, fy as u32).unwrap();
-        let to = *grid.get(tx as u32, ty as u32).unwrap();
+        let from = grid.get(fx as u32, fy as u32).unwrap();
+        let to = grid.get(tx as u32, ty as u32).unwrap();
         if !is_fluid(from.element_id) {
             continue;
         }
@@ -443,8 +427,8 @@ fn tick_filter(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         }
         let ia = grid.index(fx as u32, fy as u32);
         let ib = grid.index(tx as u32, ty as u32);
-        grid.particles.swap(ia, ib);
-        if vel.vx.len() == grid.particles.len() {
+        grid.swap_particles(ia, ib);
+        if vel.vx.len() == grid.len() {
             vel.vx.swap(ia, ib);
             vel.vy.swap(ia, ib);
         }
@@ -461,7 +445,7 @@ fn diffuse_pressure(grid: &Grid, pressure: &mut PressureField, w: u32, h: u32) {
     for y in 0..h {
         for x in 0..w {
             let i = (y * w + x) as usize;
-            let id = grid.particles[i].element_id;
+            let id = grid.element_at(i);
             if !conducts_pressure(id) {
                 next[i] = pressure.p[i].saturating_sub(2);
                 continue;
@@ -475,7 +459,7 @@ fn diffuse_pressure(grid: &Grid, pressure: &mut PressureField, w: u32, h: u32) {
                     continue;
                 }
                 let j = (ny as u32 * w + nx as u32) as usize;
-                if !conducts_pressure(grid.particles[j].element_id) {
+                if !conducts_pressure(grid.element_at(j)) {
                     continue;
                 }
                 acc += pressure.p[j] as u32;
@@ -496,10 +480,10 @@ fn apply_pressure_flow(
 ) {
     let w = grid.width;
     let h = grid.height;
-    if pressure.p.len() != grid.particles.len() {
+    if pressure.p.len() != grid.len() {
         return;
     }
-    vel.sync_len(grid.particles.len());
+    vel.sync_len(grid.len());
     let mut xs: Vec<u32> = (0..w).collect();
     for y in 0..h {
         if rng.bool() {
@@ -511,11 +495,11 @@ fn apply_pressure_flow(
             if src_p < 12 {
                 continue;
             }
-            let id = grid.particles[i].element_id;
+            let id = grid.element_at(i);
             if !(is_fluid(id) || is_powder(id)) {
                 continue;
             }
-            if grid.particles[i].has_flag(Particle::FLAG_MOVED) {
+            if grid.has_flag_at(i, Particle::FLAG_MOVED) {
                 continue;
             }
             let mut best = None;
@@ -527,7 +511,7 @@ fn apply_pressure_flow(
                     continue;
                 }
                 let j = grid.index(nx as u32, ny as u32);
-                let dest = grid.particles[j];
+                let dest = grid.particle_at(j);
                 let dp = src_p.saturating_sub(pressure.p[j]);
                 if dp < best_dp {
                     continue;
@@ -544,12 +528,12 @@ fn apply_pressure_flow(
                 if rng.f32() < (best_dp as f32 / 80.0).clamp(0.15, 0.9) {
                     let ia = grid.index(x, y);
                     let ib = grid.index(nx, ny);
-                    grid.particles.swap(ia, ib);
+                    grid.swap_particles(ia, ib);
                     vel.vx.swap(ia, ib);
                     vel.vy.swap(ia, ib);
                     vel.vx[ib] = dx as i8;
                     vel.vy[ib] = dy as i8;
-                    grid.particles[ib].set_flag(Particle::FLAG_MOVED);
+                    grid.or_flag_at(ib, Particle::FLAG_MOVED);
                 }
             }
         }
@@ -565,7 +549,7 @@ fn apply_overpressure(grid: &mut Grid, pressure: &PressureField, rng: &mut fastr
             if pressure.p[i] < 90 {
                 continue;
             }
-            let id = grid.particles[i].element_id;
+            let id = grid.element_at(i);
             if matches!(id, PIPE | ICE | WOOD) && rng.f32() < 0.12 {
                 grid.set(x, y, Particle::air());
             }
@@ -584,7 +568,7 @@ pub fn shift_control_rods(grid: &mut Grid, dy: i32) {
     for y in 0..h {
         for x in 0..w {
             if grid.get(x, y).unwrap().element_id == CONTROL_ROD {
-                rods.push((x, y, *grid.get(x, y).unwrap()));
+                rods.push((x, y, grid.get(x, y).unwrap()));
             }
         }
     }

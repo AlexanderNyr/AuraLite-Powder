@@ -194,7 +194,7 @@ impl AppState {
     }
 
     pub fn push_undo(&mut self) {
-        self.undo.push(self.simulation.grid.particles.clone());
+        self.undo.push(self.simulation.grid.particles_vec());
         if self.undo.len() > 24 {
             self.undo.remove(0);
         }
@@ -202,8 +202,8 @@ impl AppState {
 
     pub fn undo(&mut self) {
         if let Some(prev) = self.undo.pop() {
-            if prev.len() == self.simulation.grid.particles.len() {
-                self.simulation.grid.particles = prev;
+            if prev.len() == self.simulation.grid.len() {
+                self.simulation.grid.set_particles_vec(&prev);
             }
         }
     }
@@ -226,7 +226,7 @@ impl AppState {
                 if !self.simulation.grid.in_bounds(x, y) {
                     continue;
                 }
-                let p = *self.simulation.grid.get(x as u32, y as u32).unwrap();
+                let p = self.simulation.grid.get(x as u32, y as u32).unwrap();
                 if !p.is_empty() {
                     self.clipboard.push((x - cx, y - cy, p));
                 }

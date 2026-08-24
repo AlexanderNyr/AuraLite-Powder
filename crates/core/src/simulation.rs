@@ -182,7 +182,7 @@ impl SimulationState {
         let cs = CHUNK_SIZE as u32;
         for y in 0..h {
             for x in 0..w {
-                let id = self.grid.particles[self.grid.index(x, y)].element_id;
+                let id = self.grid.element_at(self.grid.index(x, y));
                 if id == AIR {
                     continue;
                 }
@@ -370,7 +370,7 @@ impl SimulationState {
         fusion_pairs: Vec<(u32, u32, u32, u32)>,
     ) {
         for (x, y) in fissile_to_check {
-            let cur = *self.grid.get(x, y).unwrap();
+            let cur = self.grid.get(x, y).unwrap();
             if cur.is_empty() || !is_fissile(cur.element_id) || cur.has_flag(Particle::FLAG_REACTED)
             {
                 continue;
@@ -413,8 +413,8 @@ impl SimulationState {
         }
 
         for (x1, y1, x2, y2) in fusion_pairs {
-            let p1 = *self.grid.get(x1, y1).unwrap();
-            let p2 = *self.grid.get(x2, y2).unwrap();
+            let p1 = self.grid.get(x1, y1).unwrap();
+            let p2 = self.grid.get(x2, y2).unwrap();
             if p1.has_flag(Particle::FLAG_REACTED) || p2.has_flag(Particle::FLAG_REACTED) {
                 continue;
             }
@@ -427,7 +427,7 @@ impl SimulationState {
         }
 
         for (x, y) in decay_to_check {
-            if let Some(p) = self.grid.get(x, y).copied() {
+            if let Some(p) = self.grid.get(x, y) {
                 if p.has_flag(Particle::FLAG_REACTED) {
                     continue;
                 }
@@ -462,7 +462,7 @@ impl SimulationState {
         let h = self.grid.height;
         for y in 0..h {
             for x in 0..w {
-                let p = *self.grid.get(x, y).unwrap();
+                let p = self.grid.get(x, y).unwrap();
                 if p.is_empty() {
                     continue;
                 }
@@ -479,9 +479,7 @@ impl SimulationState {
                             if !self.grid.in_bounds(nx, ny) {
                                 continue;
                             }
-                            if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
-                                n.temperature = n.temperature.saturating_add(100);
-                            }
+                            self.grid.modify(nx as u32, ny as u32, |n| { n.temperature = n.temperature.saturating_add(100); });
                         }
                     }
                 }
@@ -537,8 +535,10 @@ impl SimulationState {
                     let prob = reactions::fission_probability(cell_id, ev.energy, cell_temp);
                     if rng.f32() < prob {
                         self.trigger_fission(x, y, rng);
-                    } else if let Some(target) = self.grid.get_mut(x, y) {
-                        target.temperature = target.temperature.saturating_add(20);
+                    } else {
+                        self.grid.modify(x, y, |target| {
+                            target.temperature = target.temperature.saturating_add(20);
+                        });
                     }
                 } else if cell_id == BORON {
                     if rng.f32() < reactions::absorber_chance(BORON, ev.energy) {
@@ -554,9 +554,7 @@ impl SimulationState {
                     }
                 } else if cell_id == CONTROL_ROD {
                     if rng.f32() < reactions::absorber_chance(CONTROL_ROD, ev.energy) {
-                        if let Some(rod) = self.grid.get_mut(x, y) {
-                            rod.temperature = rod.temperature.saturating_add(45);
-                        }
+                        self.grid.modify(x, y, |rod| { rod.temperature = rod.temperature.saturating_add(45); });
                     }
                 } else if matches!(cell_id, XENON | IODINE) {
                     if rng.f32() < reactions::absorber_chance(cell_id, ev.energy) {
@@ -682,7 +680,7 @@ impl SimulationState {
     }
 
     fn trigger_fission(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
-        let orig = *self.grid.get(x, y).unwrap();
+        let orig = self.grid.get(x, y).unwrap();
         if orig.has_flag(Particle::FLAG_REACTED) || !is_fissile(orig.element_id) {
             return;
         }
@@ -751,11 +749,11 @@ impl SimulationState {
                 if !self.grid.in_bounds(nx, ny) {
                     continue;
                 }
-                if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
+                self.grid.modify(nx as u32, ny as u32, |n| {
                     if !n.is_empty() {
                         n.temperature = n.temperature.saturating_add(rng.u16(50..200));
                     }
-                }
+                });
             }
         }
     }
@@ -785,15 +783,13 @@ impl SimulationState {
                 if !self.grid.in_bounds(nx, ny) {
                     continue;
                 }
-                if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
-                    n.temperature = n.temperature.saturating_add(reactions::FUSION_RADIUS_HEAT);
-                }
+                self.grid.modify(nx as u32, ny as u32, |n| { n.temperature = n.temperature.saturating_add(reactions::FUSION_RADIUS_HEAT); });
             }
         }
     }
 
     fn trigger_decay(&mut self, x: u32, y: u32, rng: &mut fastrand::Rng) {
-        let p = *self.grid.get(x, y).unwrap();
+        let p = self.grid.get(x, y).unwrap();
         let daughter = reactions::decay_daughter(p.element_id);
         let radiation = reactions::decay_radiation(p.element_id);
         let mut next = Particle::new(daughter, p.temperature);
@@ -828,8 +824,10 @@ impl SimulationState {
                 }
                 if rng.f32() < 0.7 {
                     self.grid.set(nx as u32, ny as u32, Particle::air());
-                } else if let Some(n) = self.grid.get_mut(nx as u32, ny as u32) {
-                    n.temperature = n.temperature.saturating_add(300);
+                } else {
+                    self.grid.modify(nx as u32, ny as u32, |n| {
+                        n.temperature = n.temperature.saturating_add(300);
+                    });
                 }
             }
         }

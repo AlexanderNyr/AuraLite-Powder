@@ -62,11 +62,11 @@ pub fn step_active(
     rng: &mut fastrand::Rng,
     pool: Option<&crate::chunk::ChunkPool>,
 ) {
-    let len = grid.particles.len();
+    let len = grid.len();
     vel.sync_len(len);
-    for p in &mut grid.particles {
-        p.clear_flag(Particle::FLAG_MOVED);
-        p.clear_flag(Particle::FLAG_REACTED);
+    for i in 0..len {
+        grid.clear_flag_at(i, Particle::FLAG_MOVED);
+        grid.clear_flag_at(i, Particle::FLAG_REACTED);
     }
 
     let w = grid.width;
@@ -134,7 +134,7 @@ fn update_cell(
     y: u32,
     rng: &mut fastrand::Rng,
 ) {
-    let Some(cur) = grid.get(x, y).copied() else {
+    let Some(cur) = grid.get(x, y) else {
         return;
     };
     if cur.is_empty() || cur.has_flag(Particle::FLAG_MOVED) {
@@ -171,7 +171,7 @@ fn update_powder(
     rng: &mut fastrand::Rng,
 ) {
     let i = grid.index(x, y);
-    let id = grid.particles[i].element_id;
+    let id = grid.element_at(i);
     let (vx, mut vy) = vel.get(i);
     vy = (vy + 1).clamp(-3, max_fall_speed(id));
     vel.set(i, vx, vy);
@@ -226,8 +226,8 @@ fn update_liquid(
     rng: &mut fastrand::Rng,
 ) {
     let i = grid.index(x, y);
-    let id = grid.particles[i].element_id;
-    let temp = grid.particles[i].temperature;
+    let id = grid.element_at(i);
+    let temp = grid.temperature_at(i);
     let (_, mut vy) = vel.get(i);
     vy = (vy + 1).clamp(1, max_fall_speed(id));
     vel.set(i, 0, vy);
@@ -311,8 +311,8 @@ fn update_gas(
     rng: &mut fastrand::Rng,
 ) {
     let i = grid.index(x, y);
-    let id = grid.particles[i].element_id;
-    let temp = grid.particles[i].temperature;
+    let id = grid.element_at(i);
+    let temp = grid.temperature_at(i);
     let rise = rise_probability(id, temp);
     let dirs = rand_lr(rng);
 
@@ -327,7 +327,7 @@ fn update_gas(
         }
         // Displace a heavier / colder gas above.
         if y > 0 {
-            let above = grid.get(x, y - 1).copied().unwrap();
+            let above = grid.get(x, y - 1).unwrap();
             if is_gas(above.element_id) && buoyancy(id, temp) > buoyancy(above.element_id, above.temperature)
                 && rng.f32() < 0.7
             {
@@ -426,14 +426,14 @@ fn try_sink_at(
     if !grid.in_bounds(nx, ny) {
         return false;
     }
-    let dest = *grid.get(nx as u32, ny as u32).unwrap();
+    let dest = grid.get(nx as u32, ny as u32).unwrap();
     if dest.is_empty() || is_static_solid(dest.element_id) {
         return false;
     }
     if !is_fluid(dest.element_id) {
         return false;
     }
-    let src = *grid.get(x, y).unwrap();
+    let src = grid.get(x, y).unwrap();
     let dd = density_for_id(src.element_id) - density_for_id(dest.element_id);
     if dd < 0.15 {
         return false;
@@ -462,7 +462,7 @@ fn try_move_i(
     if !grid.in_bounds(nx, ny) {
         return false;
     }
-    let dest = *grid.get(nx as u32, ny as u32).unwrap();
+    let dest = grid.get(nx as u32, ny as u32).unwrap();
     if !dest.is_empty() || dest.has_flag(Particle::FLAG_MOVED) {
         return false;
     }
@@ -473,10 +473,10 @@ fn try_move_i(
 fn swap_cells(grid: &mut Grid, vel: &mut VelocityField, ax: u32, ay: u32, bx: u32, by: u32) {
     let ia = grid.index(ax, ay);
     let ib = grid.index(bx, by);
-    grid.particles.swap(ia, ib);
+    grid.swap_particles(ia, ib);
     vel.vx.swap(ia, ib);
     vel.vy.swap(ia, ib);
-    grid.particles[ib].set_flag(Particle::FLAG_MOVED);
+    grid.or_flag_at(ib, Particle::FLAG_MOVED);
 }
 
 fn rand_lr(rng: &mut fastrand::Rng) -> [i32; 2] {
@@ -488,7 +488,7 @@ fn rand_lr(rng: &mut fastrand::Rng) -> [i32; 2] {
 }
 
 fn move_radiation(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
-    let p = *grid.get(x, y).unwrap();
+    let p = grid.get(x, y).unwrap();
     let id = p.element_id;
     let mut new_p = p;
     new_p.lifetime = new_p.lifetime.wrapping_add(1);
@@ -506,7 +506,7 @@ fn move_radiation(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
     }
     // Persist a preferred heading in unused flag bits so tracks are less Brownian.
     let (pdx, pdy) = heading_from_flags(new_p.flags);
-    *grid.get_mut(x, y).unwrap() = new_p;
+    grid.set(x, y, new_p);
 
     let moves = match id {
         NEUTRON_FAST => 2,
@@ -532,9 +532,9 @@ fn move_radiation(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
             grid.set(cx as u32, cy as u32, Particle::air());
             return;
         }
-        let target = *grid.get(nx as u32, ny as u32).unwrap();
+        let target = grid.get(nx as u32, ny as u32).unwrap();
         if target.is_empty() {
-            let mut cur = *grid.get(cx as u32, cy as u32).unwrap();
+            let mut cur = grid.get(cx as u32, cy as u32).unwrap();
             cur.flags = heading_to_flags(cur.flags, dx, dy);
             grid.set(nx as u32, ny as u32, cur);
             grid.set(cx as u32, cy as u32, Particle::air());
@@ -546,14 +546,14 @@ fn move_radiation(grid: &mut Grid, x: u32, y: u32, rng: &mut fastrand::Rng) {
             let shield = density_for_id(target.element_id);
             let blocked = shield > 7.0 && rng.f32() < (shield / 20.0);
             if !blocked && pen > 0 && rng.u32(0..pen + 1) > 0 {
-                if let Some(tgt) = grid.get_mut(nx as u32, ny as u32) {
+                grid.modify(nx as u32, ny as u32, |tgt| {
                     tgt.temperature = tgt.temperature.saturating_add(match id {
                         GAMMA => 5,
                         NEUTRON_FAST => 15,
                         NEUTRON_THERMAL => 8,
                         _ => 2,
                     });
-                }
+                });
                 if id == GAMMA && rng.f32() < 0.7 {
                     continue;
                 }
@@ -588,8 +588,8 @@ pub fn diffuse_heat(grid: &mut Grid, rate: f32) {
 pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chunk::ChunkPool>) {
     let w = grid.width;
     let h = grid.height;
-    let mut next = vec![0u16; grid.particles.len()];
-    let mut mask = vec![true; grid.particles.len()];
+    let mut next = vec![0u16; grid.len()];
+    let mut mask = vec![true; grid.len()];
     if let Some(pool) = pool {
         let chunks = pool.expanded_active(1);
         if chunks.is_empty() {
@@ -613,10 +613,10 @@ pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chun
         for x in 0..w {
             let idx = grid.index(x, y);
             if !mask[idx] {
-                next[idx] = grid.particles[idx].temperature;
+                next[idx] = grid.temperature_at(idx);
                 continue;
             }
-            let cur = grid.particles[idx];
+            let cur = grid.particle_at(idx);
             let k0 = conductivity(cur.element_id);
             let t0 = cur.temperature as f32;
             let mut acc = t0;
@@ -627,7 +627,7 @@ pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chun
                 if !grid.in_bounds(nx, ny) {
                     continue;
                 }
-                let n = grid.particles[grid.index(nx as u32, ny as u32)];
+                let n = grid.particle_at(grid.index(nx as u32, ny as u32));
                 let k = 0.5 * (k0 + conductivity(n.element_id));
                 acc += n.temperature as f32 * k;
                 wsum += k;
@@ -641,7 +641,7 @@ pub fn diffuse_heat_active(grid: &mut Grid, rate: f32, pool: Option<&crate::chun
     }
     for (i, t) in next.into_iter().enumerate() {
         if mask[i] {
-            grid.particles[i].temperature = t;
+            grid.set_temperature_at(i, t);
         }
     }
 }
@@ -655,7 +655,7 @@ pub fn apply_impulse(
     radius: i32,
     rng: &mut fastrand::Rng,
 ) {
-    vel.sync_len(grid.particles.len());
+    vel.sync_len(grid.len());
     for dy in -radius..=radius {
         for dx in -radius..=radius {
             if dx * dx + dy * dy > radius * radius {
@@ -686,7 +686,7 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
     let h = grid.height;
     for y in 0..h {
         for x in 0..w {
-            let p = *grid.get(x, y).unwrap();
+            let p = grid.get(x, y).unwrap();
             if p.is_empty() {
                 continue;
             }

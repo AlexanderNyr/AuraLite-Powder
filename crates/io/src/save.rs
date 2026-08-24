@@ -105,7 +105,7 @@ impl SaveFile {
             particles: grid.to_compact(),
             settings: settings.clone(),
             full_grid: if full {
-                Some(grid.particles.clone())
+                Some(grid.particles_vec())
             } else {
                 None
             },
@@ -147,11 +147,7 @@ impl SaveFile {
             });
         }
         let grid = if let Some(full) = &self.full_grid {
-            Grid {
-                width: self.grid_width,
-                height: self.grid_height,
-                particles: full.clone(),
-            }
+            Grid::with_particles(self.grid_width, self.grid_height, full.clone())
         } else {
             Grid::from_compact(self.grid_width, self.grid_height, &self.particles)
         };
@@ -173,7 +169,7 @@ impl SaveFile {
         sim.decay_count = self.decay_count;
         sim.power = self.power;
         sim.mission = self.mission.clone();
-        let n = sim.grid.particles.len();
+        let n = sim.grid.len();
         sim.velocities.sync_len(n);
         if self.vel_x.len() == n && self.vel_y.len() == n {
             sim.velocities.vx = self.vel_x.clone();

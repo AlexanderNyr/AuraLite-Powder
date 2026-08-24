@@ -36,7 +36,10 @@ impl OverlayMode {
 }
 
 pub fn overlay_color(sim: &SimulationState, idx: usize, mode: OverlayMode) -> Option<[u8; 4]> {
-    let p = sim.grid.particles.get(idx)?;
+    if idx >= sim.grid.len() {
+        return None;
+    }
+    let p = sim.grid.particle_at(idx);
     match mode {
         OverlayMode::None => None,
         OverlayMode::Heat => {

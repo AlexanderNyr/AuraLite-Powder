@@ -11,12 +11,12 @@ use crate::devices::PressureField;
 pub fn add_hydrostatic_pressure(grid: &Grid, pressure: &mut PressureField) {
     let w = grid.width;
     let h = grid.height;
-    pressure.sync_len(grid.particles.len());
+    pressure.sync_len(grid.len());
     for x in 0..w {
         let mut depth = 0u16;
         for y in (0..h).rev() {
             let i = grid.index(x, y);
-            let id = grid.particles[i].element_id;
+            let id = grid.element_at(i);
             if is_liquid(id) || id == PIPE_WATER {
                 depth = depth.saturating_add(1);
                 let add = (depth.saturating_mul(3)).min(40);
@@ -39,7 +39,7 @@ pub fn equalize_liquid_surface(
 ) {
     let w = grid.width;
     let h = grid.height;
-    vel.sync_len(grid.particles.len());
+    vel.sync_len(grid.len());
     let mut xs: Vec<u32> = (0..w).collect();
     if rng.bool() {
         xs.reverse();
@@ -47,8 +47,8 @@ pub fn equalize_liquid_surface(
     for y in 0..h {
         for &x in &xs {
             let i = grid.index(x, y);
-            let id = grid.particles[i].element_id;
-            if !is_liquid(id) || grid.particles[i].has_flag(Particle::FLAG_MOVED) {
+            let id = grid.element_at(i);
+            if !is_liquid(id) || grid.has_flag_at(i, Particle::FLAG_MOVED) {
                 continue;
             }
             // Surface: empty / gas above, or top of the map.
@@ -91,11 +91,11 @@ pub fn equalize_liquid_surface(
                 if rng.f32() < 0.85 {
                     let ia = grid.index(x, y);
                     let ib = grid.index(nx, ny);
-                    grid.particles.swap(ia, ib);
+                    grid.swap_particles(ia, ib);
                     vel.vx.swap(ia, ib);
                     vel.vy.swap(ia, ib);
                     vel.vx[ib] = dir as i8;
-                    grid.particles[ib].set_flag(Particle::FLAG_MOVED);
+                    grid.or_flag_at(ib, Particle::FLAG_MOVED);
                 }
             }
         }
@@ -119,9 +119,9 @@ pub fn step_pipe_network(
 ) {
     let w = grid.width;
     let h = grid.height;
-    vel.sync_len(grid.particles.len());
-    pressure.sync_len(grid.particles.len());
-    let ids: Vec<u16> = grid.particles.iter().map(|p| p.element_id).collect();
+    vel.sync_len(grid.len());
+    pressure.sync_len(grid.len());
+    let ids: Vec<u16> = grid.iter_particles().map(|p| p.element_id).collect();
 
     for y in 0..h {
         for x in 0..w {
@@ -172,7 +172,7 @@ fn ingest_pipe(
     let (fx, fy, fid) = fluid.unwrap();
     let fi = grid.index(fx, fy);
     let pi = grid.index(x, y);
-    let t = grid.particles[fi].temperature;
+    let t = grid.temperature_at(fi);
     grid.set(x, y, Particle::new(pipe_with(fid), t));
     grid.set(fx, fy, Particle::air());
     if fi < vel.vx.len() && pi < vel.vx.len() {
@@ -208,7 +208,7 @@ fn eject_pipe(
         if !grid.in_bounds(nx, ny) {
             continue;
         }
-        let n = *grid.get(nx as u32, ny as u32).unwrap();
+        let n = grid.get(nx as u32, ny as u32).unwrap();
         if !n.is_empty() {
             continue;
         }
@@ -306,12 +306,12 @@ pub fn powder_overburden_slide(
 ) {
     let w = grid.width;
     let h = grid.height;
-    vel.sync_len(grid.particles.len());
+    vel.sync_len(grid.len());
     for y in (0..h).rev() {
         for x in 0..w {
             let i = grid.index(x, y);
-            let id = grid.particles[i].element_id;
-            if !is_powder(id) || grid.particles[i].has_flag(Particle::FLAG_MOVED) {
+            let id = grid.element_at(i);
+            if !is_powder(id) || grid.has_flag_at(i, Particle::FLAG_MOVED) {
                 continue;
             }
             let mut above = 0u32;
@@ -343,11 +343,11 @@ pub fn powder_overburden_slide(
             if grid.get(nx as u32, y).unwrap().is_empty() {
                 let ia = grid.index(x, y);
                 let ib = grid.index(nx as u32, y);
-                grid.particles.swap(ia, ib);
+                grid.swap_particles(ia, ib);
                 vel.vx.swap(ia, ib);
                 vel.vy.swap(ia, ib);
                 vel.vx[ib] = dir as i8;
-                grid.particles[ib].set_flag(Particle::FLAG_MOVED);
+                grid.or_flag_at(ib, Particle::FLAG_MOVED);
             }
         }
     }
