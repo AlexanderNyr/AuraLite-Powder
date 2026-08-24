@@ -16,7 +16,7 @@ pub mod simulation;
 pub use chunk::{ChunkMeta, ChunkPool, CHUNK_SIZE};
 pub use element_id::*;
 pub use grid::{Grid, GridSnapshot};
-pub use missions::{Mission, MissionId, MissionSave, MissionStatus};
+pub use missions::{Campaign, Mission, MissionId, MissionSave, MissionStatus};
 pub use particle::{Particle, ParticleData};
 pub use reactions::NeutronEnergy;
 pub use scenarios::Scenario;

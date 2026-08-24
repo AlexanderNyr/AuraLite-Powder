@@ -16,6 +16,8 @@ pub enum MissionId {
     CoolantLoop = 3,
     WireShot = 4,
     FilterRescue = 5,
+    TritiumBreeder = 6,
+    Quench = 7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +64,8 @@ impl MissionId {
             MissionId::CoolantLoop,
             MissionId::WireShot,
             MissionId::FilterRescue,
+            MissionId::TritiumBreeder,
+            MissionId::Quench,
         ]
     }
 
@@ -73,6 +77,8 @@ impl MissionId {
             3 => Some(MissionId::CoolantLoop),
             4 => Some(MissionId::WireShot),
             5 => Some(MissionId::FilterRescue),
+            6 => Some(MissionId::TritiumBreeder),
+            7 => Some(MissionId::Quench),
             _ => None,
         }
     }
@@ -85,6 +91,8 @@ impl MissionId {
             MissionId::CoolantLoop => "Keep the loop",
             MissionId::WireShot => "Wire shot",
             MissionId::FilterRescue => "Filter rescue",
+            MissionId::TritiumBreeder => "Tritium breeder",
+            MissionId::Quench => "Quench the core",
         }
     }
 
@@ -104,6 +112,8 @@ impl MissionId {
             }
             MissionId::WireShot => "Paint Spark (hotbar) on the free wire end to set off the TNT.",
             MissionId::FilterRescue => "Water must fall through the filter. Sand stays on top.",
+            MissionId::TritiumBreeder => "Lithium breeds tritium under neutron flux. Reach 15 tritium atoms.",
+            MissionId::Quench => "Submerge the hot core in water and cool it below 900 K.",
         }
     }
 }
@@ -117,6 +127,8 @@ impl Mission {
             MissionId::CoolantLoop => setup_loop(sim),
             MissionId::WireShot => setup_wire_shot(sim),
             MissionId::FilterRescue => setup_filter_rescue(sim),
+            MissionId::TritiumBreeder => setup_tritium_breeder(sim),
+            MissionId::Quench => setup_quench(sim),
         }
         let time_limit = match id {
             MissionId::HoldCritical => 40 * 60,
@@ -125,6 +137,8 @@ impl Mission {
             MissionId::CoolantLoop => 25 * 60,
             MissionId::WireShot => 30 * 60,
             MissionId::FilterRescue => 25 * 60,
+            MissionId::TritiumBreeder => 30 * 60,
+            MissionId::Quench => 30 * 60,
         };
         Self {
             id,
@@ -265,6 +279,20 @@ impl Mission {
                 }
                 if water_below >= 5 && sand_above >= 4 {
                     self.win("Water drained, sand held.");
+                }
+            }
+            MissionId::TritiumBreeder => {
+                let t = count(sim, TRITIUM);
+                self.message = format!("Tritium bred: {t}/15");
+                if t >= 15 {
+                    self.win("Bred 15 tritium atoms from lithium.");
+                }
+            }
+            MissionId::Quench => {
+                let core = max_temp_of(sim, STEEL);
+                self.message = format!("Core temperature: {core} K   target < 900");
+                if core < 900 {
+                    self.win("Core quenched below 900 K.");
                 }
             }
         }
@@ -454,4 +482,122 @@ fn setup_filter_rescue(sim: &mut SimulationState) {
         }
     }
     sim.refresh_chunks_public();
+}
+
+fn setup_tritium_breeder(sim: &mut SimulationState) {
+    sim.grid.clear();
+    sim.neutron_queue.clear();
+    sim.tick = 0;
+    let w = sim.grid.width;
+    let h = sim.grid.height;
+    for x in 0..w {
+        put(sim, x, h - 1, CONCRETE, reactions::AMBIENT_TEMP);
+    }
+    let cx = w / 2;
+    let cy = h / 2;
+    // A lithium blanket.
+    for y in (cy - 4)..(cy + 4) {
+        for x in (cx - 12)..(cx + 12) {
+            put(sim, x, y, LITHIUM, 300);
+        }
+    }
+    // Switch on a neutron flux into the blanket (one neutron per Li cell,
+    // staggered delays). Breeding is probabilistic (0.4), so ~70 cells breed.
+    let mut i = 0u8;
+    for y in (cy - 4)..(cy + 4) {
+        for x in (cx - 12)..(cx + 12) {
+            sim.neutron_queue.push_back(crate::simulation::NeutronEvent {
+                x: x as u32,
+                y: y as u32,
+                delay: i % 4,
+                energy: crate::reactions::NeutronEnergy::Thermal,
+            });
+            i = i.wrapping_add(1);
+        }
+    }
+    sim.refresh_chunks_public();
+}
+
+fn setup_quench(sim: &mut SimulationState) {
+    sim.grid.clear();
+    sim.neutron_queue.clear();
+    sim.tick = 0;
+    let w = sim.grid.width;
+    let h = sim.grid.height;
+    for x in 0..w {
+        put(sim, x, h - 1, CONCRETE, reactions::AMBIENT_TEMP);
+    }
+    let cx = w / 2;
+    let cy = h / 2;
+    // A small glowing-hot steel core (small enough that the pool can quench it).
+    for y in (cy - 1)..(cy + 2) {
+        for x in (cx - 1)..(cx + 2) {
+            put(sim, x, y, STEEL, 2400);
+        }
+    }
+    // ...submerged in a large water pool (the player's coolant).
+    for y in (cy - 14)..(h - 1) {
+        for x in (cx.saturating_sub(24))..(cx + 24).min(w) {
+            if sim.grid.get(x, y).map(|p| p.is_empty()).unwrap_or(true) {
+                put(sim, x, y, WATER, 293);
+            }
+        }
+    }
+    sim.refresh_chunks_public();
+}
+
+/// Highest temperature among all cells of a given element (Quench gate).
+fn max_temp_of(sim: &SimulationState, id: u16) -> u16 {
+    let mut m = 0u16;
+    for i in 0..sim.grid.len() {
+        if sim.grid.element_at(i) == id {
+            let t = sim.grid.temperature_at(i);
+            if t > m {
+                m = t;
+            }
+        }
+    }
+    m
+}
+
+/// Ordered campaign (P8): missions unlock as the previous one is won. The first
+/// mission is always available. Progress is held in `completed`; persisting it
+/// across saves is a follow-up (the mission itself already round-trips).
+#[derive(Clone, Debug, Default)]
+pub struct Campaign {
+    pub order: Vec<MissionId>,
+    pub completed: Vec<MissionId>,
+}
+
+impl Campaign {
+    pub fn new() -> Self {
+        Self {
+            order: MissionId::all().to_vec(),
+            completed: Vec::new(),
+        }
+    }
+
+    /// The first mission is always unlocked; every later one unlocks when the
+    /// mission immediately before it in `order` is completed.
+    pub fn is_unlocked(&self, id: MissionId) -> bool {
+        let Some(i) = self.order.iter().position(|&m| m == id) else {
+            return false;
+        };
+        i == 0 || self.completed.contains(&self.order[i - 1])
+    }
+
+    /// Record a mission result; a win unlocks the next mission in the order.
+    pub fn record(&mut self, id: MissionId, status: MissionStatus) {
+        if status == MissionStatus::Won && !self.completed.contains(&id) {
+            self.completed.push(id);
+        }
+    }
+
+    /// The next mission the player should attempt (unlocked and not yet won).
+    pub fn next(&self) -> Option<MissionId> {
+        self.order
+            .iter()
+            .copied()
+            .find(|&m| self.is_unlocked(m) && !self.completed.contains(&m))
+    }
 }

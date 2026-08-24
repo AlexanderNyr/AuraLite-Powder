@@ -15,6 +15,26 @@ nothing of render/ui/io/wasm. No entry here may break that invariant —
 
 Work toward the ROADMAP phases, applied on top of the upstream `main`.
 
+### Phase P8 — Content: campaign + 8 missions — 2026-08-24  ✅
+*Deliverable: `patches/P8_content.patch` (baseline: through `P3_thermal.patch`)*
+
+- **Added** two missions, bringing the total to the roadmap's eight:
+  - **Tritium breeder** — a lithium blanket under a switched-on neutron flux
+    breeds tritium (Li + n → T); win at ≥ 15 tritium atoms.
+  - **Quench the core** — a glowing-hot steel core submerged in a water pool;
+    win when the core cools below 900 K (heat diffusion + boiling).
+- **Added** the `Campaign` framework (core): an ordered mission list where each
+  mission unlocks when the previous one is won (`is_unlocked` / `record` /
+  `next`). Forward-compatible with saves (new `MissionId` values 6–7; old saves
+  with 0–5 still load).
+- **Test gates:** `test_mission_tritium_breeder_wins`,
+  `test_mission_quench_wins`, `test_campaign_unlock_logic`,
+  `test_eight_missions_all_start` — all four green. 68 default tests pass;
+  claim checker 13/13.
+- **Deferred:** new *elements* (the roadmap's "elements" sub-item) and campaign
+  progress persistence across saves — both additive follow-ups that do not
+  affect the eight-mission gate.
+
 ### Phase P3 — Thermal: Doppler reactivity feedback + latent heat — 2026-08-24  ✅
 *Deliverable: `patches/P3_thermal.patch` (feature `thermal-pde`, opt-in; baseline: through `P2a_parallel.patch`)*
 
