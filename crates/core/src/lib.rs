@@ -5,6 +5,7 @@ pub mod chunk;
 pub mod devices;
 pub mod element_id;
 pub mod grid;
+pub mod hydro;
 pub mod missions;
 pub mod particle;
 pub mod physics;

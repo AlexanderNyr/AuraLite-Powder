@@ -262,7 +262,17 @@ fn update_liquid(
     if falling {
         return;
     }
-    vel.set(grid.index(cx, cy), 0, 0);
+    // Thermal convection: hot liquid gets an upward kick, cold sinks harder.
+    let (vx, mut stored_vy) = vel.get(grid.index(cx, cy));
+    if temp > 380 {
+        stored_vy = (stored_vy - 1).clamp(-2, 2);
+    } else if temp < 290 {
+        stored_vy = (stored_vy + 1).clamp(0, 3);
+    }
+    vel.set(grid.index(cx, cy), vx, stored_vy);
+    if stored_vy < 0 && try_move(grid, vel, cx, cy, cx, cy.saturating_sub(1)) {
+        return;
+    }
 
     // Hydrostatic spread: prefer the side whose next cell is "downhill".
     let steps = flow_steps(id);
@@ -705,6 +715,16 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
                 ICE => {
                     if p.temperature > 273 && rng.f32() < 0.20 {
                         grid.set(x, y, Particle::new(WATER, p.temperature));
+                    }
+                }
+                PIPE_WATER => {
+                    if p.temperature > 373 && rng.f32() < 0.16 {
+                        grid.set(x, y, Particle::new(PIPE_STEAM, p.temperature));
+                    }
+                }
+                PIPE_STEAM => {
+                    if p.temperature < 368 && rng.f32() < 0.14 {
+                        grid.set(x, y, Particle::new(PIPE_WATER, p.temperature));
                     }
                 }
                 _ => {}

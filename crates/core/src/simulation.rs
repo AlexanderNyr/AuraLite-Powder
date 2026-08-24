@@ -245,6 +245,8 @@ impl SimulationState {
         let mut rng = fastrand::Rng::with_seed(self.seed.wrapping_add(self.tick));
         self.process_neutron_queue(&mut rng);
         self.physics_pass(&mut rng);
+        crate::hydro::equalize_liquid_surface(&mut self.grid, &mut self.velocities, &mut rng);
+        crate::hydro::powder_overburden_slide(&mut self.grid, &mut self.velocities, &mut rng);
         devices::step_devices(
             &mut self.grid,
             &mut self.velocities,
@@ -252,6 +254,13 @@ impl SimulationState {
             &mut rng,
             self.k_effective,
             Some(&self.chunk_pool),
+        );
+        crate::hydro::add_hydrostatic_pressure(&self.grid, &mut self.pressure);
+        crate::hydro::step_pipe_network(
+            &mut self.grid,
+            &mut self.velocities,
+            &mut self.pressure,
+            &mut rng,
         );
 
         let total_cells = self.grid.width as usize * self.grid.height as usize;

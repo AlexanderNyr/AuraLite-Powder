@@ -294,7 +294,7 @@ fn test_element_registry_consistency() {
     // Ensure all element IDs have definitions
     for id in 0..=MAX_ELEMENT_ID {
         let def = aura_lite_elements::registry::get_definition(id);
-        if id <= IODINE {
+        if id <= PIPE_STEAM {
             assert!(def.is_some(), "Element {} should have a definition", id);
         }
     }
@@ -739,4 +739,52 @@ fn test_gif_encoder_writes_header() {
     let bytes = aura_lite_io::gif89a::encode_rgba_frames(&[frame], 2, 2, 5).unwrap();
     assert!(bytes.starts_with(b"GIF89a"));
     assert_eq!(*bytes.last().unwrap(), 0x3B);
+}
+
+#[test]
+fn test_pipe_carries_water_through_a_wall() {
+    let mut sim = SimulationState::new(16, 12, 1);
+    for x in 0..16 {
+        sim.grid.set(x, 11, Particle::new(STONE, 293));
+    }
+    for x in 3..12 {
+        sim.grid.set(x, 6, Particle::new(PIPE, 293));
+    }
+    sim.grid.set(2, 6, Particle::new(WATER, 293));
+    sim.grid.set(2, 5, Particle::new(WATER, 293));
+    sim.grid.set(1, 6, Particle::new(PUMP, 293));
+    for _ in 0..80 {
+        sim.tick();
+    }
+    let carried = (10..16).any(|x| {
+        (0..11).any(|y| {
+            matches!(
+                sim.grid.get(x, y).map(|p| p.element_id),
+                Some(WATER) | Some(PIPE_WATER)
+            )
+        })
+    });
+    assert!(carried, "a pipe run should move water past x=10");
+}
+
+#[test]
+fn test_hydrostatic_pressure_grows_with_depth() {
+    let mut sim = SimulationState::new(8, 16, 0);
+    for y in 8..15 {
+        for x in 2..6 {
+            sim.grid.set(x, y, Particle::new(WATER, 293));
+        }
+    }
+    for x in 0..8 {
+        sim.grid.set(x, 15, Particle::new(STONE, 293));
+    }
+    for _ in 0..12 {
+        sim.tick();
+    }
+    let top = sim.pressure.p[sim.grid.index(3, 9)];
+    let bot = sim.pressure.p[sim.grid.index(3, 14)];
+    assert!(
+        bot >= top,
+        "deeper water should be at least as pressurized (top={top} bot={bot})"
+    );
 }

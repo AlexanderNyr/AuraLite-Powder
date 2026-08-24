@@ -46,6 +46,8 @@ pub const COAL: u16 = 42;
 pub const SPARK: u16 = 43;
 pub const FILTER: u16 = 44;
 pub const IODINE: u16 = 45;
+pub const PIPE_WATER: u16 = 46;
+pub const PIPE_STEAM: u16 = 47;
 
 pub const MAX_ELEMENT_ID: u16 = 47;
 
@@ -71,7 +73,7 @@ pub fn kind_for_id(id: u16) -> ElementKind {
         SAND => ElementKind::Sand,
         WATER | HEAVY_WATER | ACID => ElementKind::Liquid,
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
-        | PIPE | SENSOR | CONTROL_ROD | FILTER => ElementKind::Solid,
+        | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | CONTROL_ROD | FILTER => ElementKind::Solid,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
         | TNT | SLAG | COAL => ElementKind::Sand,
         TRITIUM | DEUTERIUM | HELIUM | HYDROGEN | STEAM | XENON | IODINE => ElementKind::Gas,
@@ -125,6 +127,8 @@ pub fn density_for_id(id: u16) -> f32 {
         SPARK => 0.001,
         FILTER => 4.5,
         IODINE => 0.05,
+        PIPE_WATER => 5.6,
+        PIPE_STEAM => 5.4,
         NEUTRON_THERMAL => 0.001,
         NEUTRON_FAST => 0.001,
         GAMMA => 0.0,
@@ -139,7 +143,7 @@ pub fn is_fissile(id: u16) -> bool {
 }
 
 pub fn is_moderator(id: u16) -> bool {
-    matches!(id, HEAVY_WATER | WATER | GRAPHITE)
+    matches!(id, HEAVY_WATER | WATER | GRAPHITE | PIPE_WATER)
 }
 
 pub fn is_radiation(id: u16) -> bool {
@@ -162,8 +166,27 @@ pub fn is_static_solid(id: u16) -> bool {
     matches!(
         id,
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
-            | PIPE | SENSOR | CONTROL_ROD | FILTER
+            | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | CONTROL_ROD | FILTER
     )
+}
+
+pub fn is_pipe(id: u16) -> bool {
+    matches!(id, PIPE | PIPE_WATER | PIPE_STEAM)
+}
+
+pub fn pipe_payload(id: u16) -> Option<u16> {
+    match id {
+        PIPE_WATER => Some(WATER),
+        PIPE_STEAM => Some(STEAM),
+        _ => None,
+    }
+}
+
+pub fn pipe_with(payload: u16) -> u16 {
+    match payload {
+        STEAM | HYDROGEN | HELIUM | XENON | IODINE => PIPE_STEAM,
+        _ => PIPE_WATER,
+    }
 }
 
 /// Granular material that piles with an angle of repose.
@@ -193,7 +216,7 @@ pub fn is_conductive(id: u16) -> bool {
 }
 
 pub fn is_device(id: u16) -> bool {
-    matches!(id, HEATER | PUMP | PIPE | SENSOR | WIRE | CONTROL_ROD)
+    matches!(id, HEATER | PUMP | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | WIRE | CONTROL_ROD)
 }
 
 pub fn is_fluid(id: u16) -> bool {

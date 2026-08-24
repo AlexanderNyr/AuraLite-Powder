@@ -137,6 +137,18 @@ fn pump_fluid(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32) {
         if !is_fluid(from.element_id) {
             continue;
         }
+        if to.element_id == PIPE {
+            let ia = grid.index(fx as u32, fy as u32);
+            grid.set(tx as u32, ty as u32, Particle::new(pipe_with(from.element_id), from.temperature));
+            grid.set(fx as u32, fy as u32, Particle::air());
+            if vel.vx.len() == grid.particles.len() {
+                vel.vx[grid.index(tx as u32, ty as u32)] = (-dx as i8).clamp(-2, 2);
+                vel.vy[grid.index(tx as u32, ty as u32)] = (-dy as i8).clamp(-2, 2);
+                vel.vx[ia] = 0;
+                vel.vy[ia] = 0;
+            }
+            return;
+        }
         if !(to.is_empty() || is_fluid(to.element_id)) {
             continue;
         }

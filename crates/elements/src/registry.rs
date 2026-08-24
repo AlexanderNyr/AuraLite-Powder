@@ -420,6 +420,8 @@ pub fn all_definitions() -> Vec<ElementDef> {
         def(SPARK, "Spark", Rgba::rgb(255, 255, 180), 0.001, 900, 0, false, false, true, 1),
         def(FILTER, "Filter", Rgba::rgb(160, 190, 170), 4.5, 293, 0, false, false, false, 0),
         def(IODINE, "Iodine", Rgba::rgb(160, 90, 200), 0.05, 320, 2_400, false, false, false, 0),
+        def(PIPE_WATER, "Pipe (water)", Rgba::rgb(50, 130, 180), 5.6, 300, 0, false, true, false, 0),
+        def(PIPE_STEAM, "Pipe (steam)", Rgba::rgb(170, 190, 200), 5.4, 400, 0, false, false, false, 0),
     ]
 }
 
@@ -501,6 +503,8 @@ pub fn name_for_id(id: u16) -> &'static str {
         SPARK => "Spark",
         FILTER => "Filter",
         IODINE => "Iodine",
+        PIPE_WATER => "Pipe (water)",
+        PIPE_STEAM => "Pipe (steam)",
         _ => "Unknown",
     }
 }
