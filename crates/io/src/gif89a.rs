@@ -81,7 +81,13 @@ fn lzw_encode(indices: &[u8], min_code: u8, out: &mut Vec<u8>) -> io::Result<()>
             if next_code < 4096 {
                 dict.insert(wk, next_code);
                 next_code += 1;
-                if next_code == (1 << code_size) && code_size < 12 {
+                // The decoder's code table lags the encoder's by one entry, so the
+                // code width must be increased one entry *after* the table fills the
+                // current width. Using `== (1 << code_size)` bumps one entry too
+                // early, desynchronising the bit stream and producing a GIF that no
+                // standard decoder (browsers, libgif, Pillow) can read once the
+                // dictionary grows past the first code-size boundary.
+                if next_code == (1 << code_size) + 1 && code_size < 12 {
                     code_size += 1;
                 }
             } else {
@@ -153,4 +159,133 @@ pub fn write_gif_file<P: AsRef<std::path::Path>>(
     let bytes = encode_rgba_frames(frames, w, h, delay_cs)?;
     let mut f = std::fs::File::create(path)?;
     f.write_all(&bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal LSB-first GIF LZW decoder, used only to round-trip our encoder.
+    fn lzw_decode(data: &[u8], min_code: u8) -> Option<Vec<u8>> {
+        let clear = 1u16 << min_code;
+        let eoi = clear + 1;
+        let mut width: u32 = min_code as u32 + 1;
+        let mut acc: u64 = 0;
+        let mut bits: u32 = 0;
+        let mut pos: usize = 0;
+        // Codes 0..clear are colour entries; clear/eoi are empty placeholders so
+        // that table[c] can be indexed directly by code value.
+        let mut table: Vec<Vec<u8>> = (0..=(eoi))
+            .map(|i| if i < clear { vec![i as u8] } else { vec![] })
+            .collect();
+        let mut next_code = eoi + 1;
+        let mut out: Vec<u8> = Vec::new();
+        let mut prev: Option<u16> = None;
+        loop {
+            while bits < width {
+                if pos >= data.len() {
+                    return Some(out);
+                }
+                acc |= (data[pos] as u64) << bits;
+                pos += 1;
+                bits += 8;
+            }
+            let c = (acc & ((1u64 << width) - 1)) as u16;
+            acc >>= width;
+            bits -= width;
+
+            if c == eoi {
+                break;
+            }
+            if c == clear {
+                table = (0..=(eoi))
+                    .map(|i| if i < clear { vec![i as u8] } else { vec![] })
+                    .collect();
+                next_code = eoi + 1;
+                width = min_code as u32 + 1;
+                prev = None;
+                continue;
+            }
+            let entry = if let Some(p) = prev {
+                if (c as usize) < table.len() && !table[c as usize].is_empty() {
+                    table[c as usize].clone()
+                } else if c == next_code {
+                    let mut e = table[p as usize].clone();
+                    e.push(table[p as usize][0]);
+                    e
+                } else {
+                    return None;
+                }
+            } else {
+                table.get(c as usize).cloned().filter(|e| !e.is_empty())?
+            };
+            out.extend_from_slice(&entry);
+            if let Some(p) = prev {
+                let mut new_entry = table[p as usize].clone();
+                new_entry.push(entry[0]);
+                table.push(new_entry);
+                next_code += 1;
+                // The decoder's code table lags the encoder's by one entry, so its
+                // width-bump threshold is `2^width` (Rule A) while the encoder uses
+                // `2^width + 1`. Using the encoder's threshold here desynchronises
+                // the stream — this is exactly the off-by-one the fix addresses.
+                if next_code == (1u16 << width) && width < 12 {
+                    width += 1;
+                }
+            }
+            prev = Some(c);
+        }
+        Some(out)
+    }
+
+    #[test]
+    fn roundtrip_crosses_code_size_boundary() {
+        // A noisy 4-colour image big enough to grow the LZW dictionary well past
+        // the first code-size boundary — exactly the case the off-by-one broke.
+        let (w, h) = (64u16, 64u16);
+        let palette: [[u8; 3]; 4] = [[200, 30, 30], [30, 200, 30], [30, 30, 200], [220, 220, 40]];
+        let mut state: u64 = 0x9e3779b97f4a7c15;
+        let mut next = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (state >> 33) as u32
+        };
+        let raw: Vec<usize> = (0..(w as usize * h as usize))
+            .map(|_| (next() & 3) as usize)
+            .collect();
+        // `encode_rgba_frames` re-quantises each pixel through the 3-3-2 palette,
+        // so the decoded indices are rgb332(colour), not the original colour id.
+        let expected: Vec<u8> = raw
+            .iter()
+            .map(|&i| {
+                let c = palette[i];
+                ((c[0] >> 5) << 5) | ((c[1] >> 5) << 2) | (c[2] >> 6)
+            })
+            .collect();
+        let frame: Vec<u8> = raw
+            .iter()
+            .flat_map(|&i| {
+                let c = palette[i];
+                [c[0], c[1], c[2], 255]
+            })
+            .collect();
+
+        let gif = encode_rgba_frames(&[frame], w, h, 5).unwrap();
+        // Locate the single image's LZW sub-block stream.
+        let mut i = gif.iter().copied().position(|b| b == 0x2C).unwrap() + 10;
+        let min_code = gif[i];
+        i += 1;
+        let mut lzw = Vec::new();
+        loop {
+            let n = gif[i] as usize;
+            i += 1;
+            if n == 0 {
+                break;
+            }
+            lzw.extend_from_slice(&gif[i..i + n]);
+            i += n;
+        }
+        let decoded = lzw_decode(&lzw, min_code).expect("LZW stream must decode");
+        assert_eq!(decoded.len(), expected.len());
+        assert_eq!(decoded, expected, "round-tripped indices must match exactly");
+    }
 }

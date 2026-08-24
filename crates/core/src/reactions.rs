@@ -131,6 +131,13 @@ pub fn absorber_chance(id: u16, energy: NeutronEnergy) -> f32 {
         (CONTROL_ROD, NeutronEnergy::Fast) => 0.70,
         (XENON, NeutronEnergy::Thermal) => 0.95,
         (XENON, NeutronEnergy::Fast) => 0.55,
+        // I-135 is a real (if weaker than Xe-135) neutron absorber. Without this
+        // arm, `absorber_chance(IODINE, _)` returned 0, so the dedicated iodine
+        // branch in `process_neutron_queue` never absorbed anything — yet iodine
+        // was still counted toward the absorber total used for k-effective, making
+        // the criticality estimate inconsistent with actual reactivity.
+        (IODINE, NeutronEnergy::Thermal) => 0.35,
+        (IODINE, NeutronEnergy::Fast) => 0.12,
         _ => 0.0,
     }
 }

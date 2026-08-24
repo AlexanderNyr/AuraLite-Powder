@@ -43,18 +43,22 @@ impl Camera {
     }
 
     pub fn zoom(&mut self, factor: f32, center: Option<Vec2<f32>>) {
-        let old_scale = self.scale;
-        self.scale = (self.scale * factor).clamp(0.1, 20.0);
         if let Some(c) = center {
-            // Adjust offset to keep center stable
-            let world_center = self.screen_to_world(c);
-            // After scale change, we want same world point under cursor
-            // new_offset = world - screen/scale
+            // Capture the world point currently under the cursor BEFORE the scale
+            // changes — screen_to_world reads `self.scale`, so it must run while
+            // the old scale is still in effect.
+            let world = self.screen_to_world(c);
+            self.scale = (self.scale * factor).clamp(0.1, 20.0);
+            // Recompute the offset so that the same world point stays under the
+            // cursor after zooming (previously the offset was unchanged because the
+            // world point was computed with the *new* scale, anchoring zoom to the
+            // world origin instead of the cursor).
             self.offset = Vec2::new(
-                world_center.x - c.x / self.scale,
-                world_center.y - c.y / self.scale,
+                world.x - c.x / self.scale,
+                world.y - c.y / self.scale,
             );
-            let _ = old_scale;
+        } else {
+            self.scale = (self.scale * factor).clamp(0.1, 20.0);
         }
     }
 

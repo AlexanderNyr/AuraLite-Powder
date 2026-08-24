@@ -544,13 +544,6 @@ fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
                 .brush
                 .apply_brush(&mut app.simulation.grid, gx, gy);
         }
-        BrushTool::Line => {
-            if !is_start {
-                app.tools
-                    .brush
-                    .apply_brush(&mut app.simulation.grid, gx, gy);
-            }
-        }
         BrushTool::Fill => {
             if is_start {
                 app.push_undo();
@@ -562,7 +555,10 @@ fn apply_brush(app: &mut AppState, gx: i32, gy: i32, is_start: bool) {
                 app.stamp_at(gx, gy);
             }
         }
-        BrushTool::Rectangle | BrushTool::Copy => {}
+        // Line / Rectangle / Copy are committed from `line_start` on button
+        // release; painting a brush stamp during the drag left a permanent trail
+        // underneath the shape, so do nothing while dragging.
+        BrushTool::Line | BrushTool::Rectangle | BrushTool::Copy => {}
     }
 }
 
