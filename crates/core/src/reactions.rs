@@ -54,11 +54,39 @@ pub fn fission_base_probability(element_id: u16, energy: NeutronEnergy) -> f32 {
     }
 }
 
+/// Doppler temperature coefficient (per Kelvin above ambient). Negative for
+/// fissile isotopes: a hotter fuel lattice broadens resonance absorption, so
+/// reactivity falls — the feedback real reactors rely on to stay critical.
+/// Only consulted under the `thermal-pde` feature (P3).
+pub fn temperature_coefficient(element_id: u16) -> f32 {
+    match element_id {
+        U235 => -0.0008,
+        U238 => -0.0006,
+        PU239 => -0.0005,
+        PU240 => -0.0007,
+        MOLTEN_FUEL => -0.0004,
+        _ => 0.0,
+    }
+}
+
 /// Temperature-adjusted fission probability, clamped to `[0, 0.95]`.
 pub fn fission_probability(element_id: u16, energy: NeutronEnergy, temp: u16) -> f32 {
     let base = fission_base_probability(element_id, energy);
-    let temp_factor = 1.0 + ((temp as f32 - AMBIENT_TEMP as f32) / 1000.0).clamp(-0.5, 1.0);
-    (base * temp_factor).clamp(0.0, 0.95)
+    #[cfg(not(feature = "thermal-pde"))]
+    {
+        // MVP model: a mild *positive* temperature coefficient (hotter = slightly
+        // more reactive). Kept as the default so replay and the golden corpus hold.
+        let temp_factor = 1.0 + ((temp as f32 - AMBIENT_TEMP as f32) / 1000.0).clamp(-0.5, 1.0);
+        (base * temp_factor).clamp(0.0, 0.95)
+    }
+    #[cfg(feature = "thermal-pde")]
+    {
+        // P3: Doppler feedback dominates — reactivity falls as fuel temperature
+        // rises, so a chain reaction self-limits instead of running to meltdown.
+        let coeff = temperature_coefficient(element_id);
+        let excess = (temp as f32 - AMBIENT_TEMP as f32).max(0.0);
+        (base * (1.0 + coeff * excess)).clamp(0.0, 0.95)
+    }
 }
 
 pub fn neutron_count(element_id: u16, rng: &mut fastrand::Rng) -> u32 {

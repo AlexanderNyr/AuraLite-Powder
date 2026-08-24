@@ -771,7 +771,20 @@ pub fn apply_phase_changes(grid: &mut Grid, rng: &mut fastrand::Rng) {
                         grid.set(x, y, Particle::new(ICE, p.temperature));
                     } else if p.temperature > 373 && p.temperature <= reactions::BOIL_TEMP && rng.f32() < 0.20
                     {
+                        #[cfg(not(feature = "thermal-pde"))]
                         grid.set(x, y, Particle::new(STEAM, p.temperature));
+                        #[cfg(feature = "thermal-pde")]
+                        {
+                            // P3 latent heat: vaporisation absorbs energy, so the
+                            // steam starts near the boiling point and saps heat
+                            // from its neighbours rather than carrying it for free.
+                            grid.set(x, y, Particle::new(STEAM, 400));
+                            for (dx, dy) in [(-1i32, 0), (1, 0), (0, -1), (0, 1)] {
+                                grid.modify((x as i32 + dx) as u32, (y as i32 + dy) as u32, |n| {
+                                    n.temperature = n.temperature.saturating_sub(40);
+                                });
+                            }
+                        }
                     }
                 }
                 HEAVY_WATER => {

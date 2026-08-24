@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "Core simulation kernel for AuraLite"
 
+[features]
+# P3: a physically-honest thermal model — Doppler reactivity feedback (negative
+# temperature coefficient) and latent heat at phase changes. The default build
+# keeps the MVP model (a mild positive temperature coefficient); enabling this
+# makes a pile self-limiting. Off by default so save replay and the golden
+# corpus are unchanged.
+default = []
+thermal-pde = []
+
 [dependencies]
 aura-lite-utils = { path = "../utils" }
 serde = { version = "1.0", features = ["derive"] }

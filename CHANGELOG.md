@@ -15,6 +15,31 @@ nothing of render/ui/io/wasm. No entry here may break that invariant —
 
 Work toward the ROADMAP phases, applied on top of the upstream `main`.
 
+### Phase P3 — Thermal: Doppler reactivity feedback + latent heat — 2026-08-24  ✅
+*Deliverable: `patches/P3_thermal.patch` (feature `thermal-pde`, opt-in; baseline: through `P2a_parallel.patch`)*
+
+- **Added** the `thermal-pde` feature (core + workspace). Off by default, so the
+  MVP model, save replay and the golden corpus are unchanged (verified: the
+  default `golden_tick_corpus` still passes byte-for-byte).
+- **Added** `reactions::temperature_coefficient` — a negative Doppler
+  coefficient per fissile isotope (U-235 −0.0008/K, …). Under `thermal-pde`,
+  `fission_probability` uses it instead of the MVP's mild positive coefficient,
+  so reactivity **falls** as fuel temperature rises — the feedback real
+  reactors rely on. A chain reaction now self-limits instead of running to
+  meltdown.
+- **Added** latent heat at the water→steam phase change under `thermal-pde`:
+  the steam starts near the boiling point and saps heat from its neighbours,
+  rather than carrying the excess energy for free.
+- **Test gates (under `--features thermal-pde`):**
+  `doppler_lowers_reactivity_at_high_temp` (unit: fission prob is monotone
+  decreasing in temperature), `self_limiting_pile` (a graphite-moderated pile
+  sustains a chain but forms **no molten fuel** and peaks < 3500 K), and
+  `boiling_cools_neighbours` (latent heat).
+- **Default build unchanged:** 64 tests green, golden corpus identical.
+- **Deferred:** the full implicit ADI heat-conduction solver (the current
+  conductivity-weighted Jacobi step is retained — stable and sufficient for the
+  feedback loop; ADI is a numerical-precision refinement for a later sub-phase).
+
 ### Phase P2a — Parallel passes: deterministic reactions + parallel heat — 2026-08-24  ✅
 *Deliverable: `patches/P2a_parallel.patch` (baseline: through `P1_soa.patch`)*
 
