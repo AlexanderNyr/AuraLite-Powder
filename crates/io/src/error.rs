@@ -12,4 +12,6 @@ pub enum IoError {
     Compression(String),
     #[error("Invalid file format")]
     InvalidFormat,
+    #[error("Save grid too large: {width}x{height} (max side 8192, max area 16777216)")]
+    GridTooLarge { width: u32, height: u32 },
 }

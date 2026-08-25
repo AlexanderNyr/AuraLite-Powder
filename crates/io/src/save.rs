@@ -146,6 +146,19 @@ impl SaveFile {
                 current: CURRENT_VERSION,
             });
         }
+        // Dimension guard (P9b): reject absurd grids before any allocation.
+        if self.grid_width > MAX_GRID_SIDE
+            || self.grid_height > MAX_GRID_SIDE
+            || self
+                .grid_width
+                .checked_mul(self.grid_height)
+                .is_none_or(|area| area > MAX_GRID_AREA)
+        {
+            return Err(IoError::GridTooLarge {
+                width: self.grid_width,
+                height: self.grid_height,
+            });
+        }
         let grid = if let Some(full) = &self.full_grid {
             Grid::with_particles(self.grid_width, self.grid_height, full.clone())
         } else {
@@ -204,14 +217,28 @@ fn encode_save(save: &SaveFile, use_compression: bool) -> Result<Vec<u8>, IoErro
     Ok(encoded)
 }
 
+/// Maximum grid dimensions accepted from a save file. A crafted/corrupted
+/// save claiming an enormous grid (compact mode stores no payload, so the
+/// bytes say nothing about the claimed area) used to reach `Grid::new` and
+/// abort with "capacity overflow" — the P9b fuzzer found exactly that. The
+/// caps are far beyond gameplay (the README tops out at 1024²) but bounded
+/// enough that a hostile save cannot demand exabytes.
+pub const MAX_GRID_SIDE: u32 = 8192;
+/// 4096² — the total cell budget (an 8192×2048 slab is fine, 8192² is not).
+pub const MAX_GRID_AREA: u32 = 16_777_216;
+/// Total bytes the save decoder will read before rejecting the stream.
+/// bincode pre-allocates `Vec::with_capacity(len)` from a container's length
+/// varint BEFORE decoding a single element, so without a limit a crafted
+/// length claims its bytes up front. 256 MiB is ~30× a full 1024² save.
+pub const SAVE_DECODE_LIMIT: usize = 256 * 1024 * 1024;
+
 fn decode_save_bytes(data: &[u8]) -> Result<SaveFile, IoError> {
-    let current: Result<(SaveFile, usize), _> =
-        bincode::serde::decode_from_slice(data, bincode::config::standard());
+    let config = bincode::config::standard().with_limit::<SAVE_DECODE_LIMIT>();
+    let current: Result<(SaveFile, usize), _> = bincode::serde::decode_from_slice(data, config);
     if let Ok((save, _)) = current {
         return Ok(save);
     }
-    let legacy: Result<(SaveFileV1, usize), _> =
-        bincode::serde::decode_from_slice(data, bincode::config::standard());
+    let legacy: Result<(SaveFileV1, usize), _> = bincode::serde::decode_from_slice(data, config);
     match legacy {
         Ok((v1, _)) => Ok(SaveFile::from(v1)),
         Err(e) => Err(IoError::Serialization(e.to_string())),

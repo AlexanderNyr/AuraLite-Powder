@@ -40,9 +40,18 @@ pub fn encode_rgba_frames(
     out.extend_from_slice(&[0x03, 0x01, 0x00, 0x00, 0x00]);
 
     for frame in frames {
+        // P9b fuzz fix: a frame whose length is not a multiple of 4 leaves a
+        // trailing partial pixel — index it defensively instead of panicking
+        // (missing channels read as 0).
         let indexed: Vec<u8> = frame
             .chunks(4)
-            .map(|px| rgb332(px[0], px[1], px[2]))
+            .map(|px| {
+                rgb332(
+                    px.first().copied().unwrap_or(0),
+                    px.get(1).copied().unwrap_or(0),
+                    px.get(2).copied().unwrap_or(0),
+                )
+            })
             .collect();
         // Graphic Control
         out.extend_from_slice(&[0x21, 0xF9, 0x04, 0x00]);
@@ -297,5 +306,72 @@ mod tests {
             decoded, expected,
             "round-tripped indices must match exactly"
         );
+    }
+
+    /// P9b encode fuzz: arbitrary frame contents (and even mismatched lengths)
+    /// must never panic the encoder — it must always produce a well-formed
+    /// GIF (header + trailer) or a clean error.
+    #[test]
+    fn encode_fuzz_arbitrary_frames() {
+        let mut st: u64 = 0xfeed_beef;
+        let mut next = || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            st
+        };
+        for i in 0..200 {
+            let (w, h) = ((next() % 40) as u16, (next() % 40) as u16);
+            // Sometimes deliberately wrong buffer lengths.
+            let len = if i % 7 == 0 {
+                (next() % 700) as usize
+            } else {
+                w as usize * h as usize * 4
+            };
+            let frame: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+            let bytes = encode_rgba_frames(&[frame], w, h, 5).expect("encode must not panic");
+            assert!(bytes.starts_with(b"GIF89a"));
+            assert_eq!(*bytes.last().unwrap(), 0x3B);
+        }
+    }
+
+    /// P9b round-trip fuzz: random frames of the CORRECT length must encode
+    /// and decode back to the rgb332-quantised original indices.
+    #[test]
+    fn roundtrip_fuzz_random_frames() {
+        let mut st: u64 = 0x5eed_1234;
+        let mut next = || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            st
+        };
+        for _ in 0..60 {
+            let (w, h) = ((next() % 24 + 1) as u16, (next() % 24 + 1) as u16);
+            let n = w as usize * h as usize;
+            let frame: Vec<u8> = (0..n * 4).map(|_| next() as u8).collect();
+            let expected: Vec<u8> = frame
+                .chunks(4)
+                .map(|px| rgb332(px[0], px[1], px[2]))
+                .collect();
+            let gif = encode_rgba_frames(&[frame], w, h, 4).expect("encode");
+            // Locate the single image's LZW sub-block stream.
+            let mut i = gif.iter().copied().position(|b| b == 0x2C).unwrap() + 10;
+            let min_code = gif[i];
+            i += 1;
+            let mut lzw = Vec::new();
+            loop {
+                let n = gif[i] as usize;
+                i += 1;
+                if n == 0 {
+                    break;
+                }
+                lzw.extend_from_slice(&gif[i..i + n]);
+                i += n;
+            }
+            let decoded = lzw_decode(&lzw, min_code).expect("decode must not panic");
+            assert_eq!(decoded.len(), expected.len());
+            assert_eq!(decoded, expected, "round-trip must be exact");
+        }
     }
 }

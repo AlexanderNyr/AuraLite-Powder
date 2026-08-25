@@ -50,6 +50,38 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   62 integration + 10 unit tests green; fmt + clippy clean; claim checker
   updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
 
+### Phase P9b — Hardening: codec fuzzing — 2026-08-24  ✅
+*Deliverable: `patches/P9b_fuzz.patch` — the fuzzer found and the phase fixed **three real bugs***
+
+- **Added** deterministic fuzz-style tests (local xorshift, thousands of
+  iterations, run in the normal `cargo test` suite — no libFuzzer
+  infrastructure needed): random buffers, systematic single-byte mutations of
+  a valid save, every truncation, crafted allocation bombs, and arbitrary
+  GIF frames — through decode, `apply_to`, the replay path, and the GIF
+  encoder/round-trip.
+- **Fixed** (found by the fuzzer, in order):
+  1. **i8 velocity overflow** — a crafted save with `vel_y = 127` panicked
+     `vy + 1` in `update_powder`/`update_liquid` (debug builds crash; release
+     silently wraps to −128). Now `saturating_add`.
+  2. **Grid allocation bomb** — a compact save claiming `u32::MAX × u32::MAX`
+     cells with zero payload (tiny on disk) reached `Grid::new` and aborted
+     with "capacity overflow". Now guarded: `MAX_GRID_SIDE = 8192`,
+     `MAX_GRID_AREA = 16 777 216` (far beyond the 1024² gameplay ceiling),
+     rejected with a new `IoError::GridTooLarge`.
+  3. **GIF encoder index panic** — a frame whose length is not a multiple of
+     4 left a trailing partial pixel; `px[2]` indexed out of bounds. Now
+     indexed defensively (missing channels read as 0).
+- **Added** a bincode **decode limit** (`with_limit::<256 MiB>`): bincode
+  pre-allocates `Vec::with_capacity(len)` from a container's length varint
+  *before* decoding a single element, so a crafted length claimed its bytes
+  up front. The limit rejects the claim at the decoder — 256 MiB is ~30× a
+  full 1024² save.
+- **Gates:** 5 save-fuzz tests + 2 GIF-fuzz tests, all green; the full suite
+  (81 integration + 12 unit) green; golden corpus and replay hash unchanged;
+  fmt + clippy clean; claim checker 13/13; feature suites green.
+- **Deferred:** WASM threads (needs browser verification) and save v3 (still
+  no incompatible state — both P4 and P5a stayed v2-compatible by design).
+
 ### Phase P2c — Scan elimination: classify-once gating + parallel pressure — 2026-08-24  ✅
 *Deliverable: `patches/P2c_scans.patch`*
 

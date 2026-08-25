@@ -346,7 +346,7 @@ fn update_powder(
     let i = grid.index(x, y);
     let id = grid.element_at(i);
     let (vx, mut vy) = vel.get(i);
-    vy = (vy + 1).clamp(-3, max_fall_speed(id));
+    vy = vy.saturating_add(1).clamp(-3, max_fall_speed(id));
     vel.set(i, vx, vy);
 
     let mut cx = x;
@@ -402,7 +402,7 @@ fn update_liquid(
     let id = grid.element_at(i);
     let temp = grid.temperature_at(i);
     let (_, mut vy) = vel.get(i);
-    vy = (vy + 1).clamp(1, max_fall_speed(id));
+    vy = vy.saturating_add(1).clamp(1, max_fall_speed(id));
     vel.set(i, 0, vy);
 
     let mut cx = x;
@@ -440,7 +440,7 @@ fn update_liquid(
     if temp > 380 {
         stored_vy = (stored_vy - 1).clamp(-2, 2);
     } else if temp < 290 {
-        stored_vy = (stored_vy + 1).clamp(0, 3);
+        stored_vy = stored_vy.saturating_add(1).clamp(0, 3);
     }
     vel.set(grid.index(cx, cy), vx, stored_vy);
     if stored_vy < 0 && try_move(grid, vel, cx, cy, cx, cy.saturating_sub(1)) {
