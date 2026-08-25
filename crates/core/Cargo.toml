@@ -12,6 +12,10 @@ description = "Core simulation kernel for AuraLite"
 # corpus are unchanged.
 default = []
 thermal-pde = []
+# P5b: pressure transients — a steam explosion when water meets molten fuel
+# (flashes to steam + an ejection impulse). Off by default; the MVP has no such
+# transient. The full Navier-Stokes-lite solver is a later sub-phase.
+fluid-pde = []
 
 [dependencies]
 aura-lite-utils = { path = "../utils" }

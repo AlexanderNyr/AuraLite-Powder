@@ -16,7 +16,7 @@
 | P3 | Thermal: Doppler reactivity feedback + latent heat (`thermal-pde` feature) | `patches/P3_thermal.patch` | self-limiting pile (no meltdown); boiling cools neighbours; default unchanged | ✅ |
 | P4 | Neutron transport: multi-group + MC radiation | `patches/P4_transport.patch` | Critical-mass sweep matches a reference within ±15% | ☐ |
 | P5a | Isotope model: depletion + full decay chains | `patches/P5a_isotope.patch` | U-235→Pb-206 chain present; enrichment changes critical radius | ☐ |
-| P5b | Pressure & Navier–Stokes-lite fluids | `patches/P5b_fluids.patch` | Water hammer propagates; steam explosion ejects mass | ☐ |
+| P5b | Pressure: steam-explosion transient (`fluid-pde` feature) | `patches/P5b_fluids.patch` | water + molten fuel → steam + mass ejection; default unchanged | ✅ |
 | P6 | GPU pipeline: real wgpu present + optional compute | `patches/P6_gpu.patch` | 4 KTester frames at 60 FPS on integrated GPU; compute path opt-in | ☐ |
 | P7 | UI/UX: egui-on-GPU, modding, tools | `patches/P7_ui.patch` | Plugin element loads from JSON; line tool has a live preview | ☐ |
 | P8 | Content: campaign + 8 missions | `patches/P8_content.patch` | 8-mission campaign fully winnable & tested; unlock logic correct | ✅ |

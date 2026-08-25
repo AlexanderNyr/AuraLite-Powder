@@ -55,6 +55,9 @@ compression = [
 thermal-pde = [
     "aura-lite-core/thermal-pde",
 ]
+fluid-pde = [
+    "aura-lite-core/fluid-pde",
+]
 
 [dependencies]
 aura-lite-core = { path = "crates/core" }

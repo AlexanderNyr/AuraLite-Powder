@@ -499,6 +499,38 @@ impl SimulationState {
                     // Thermolysis of already-superheated water / steam.
                     self.grid.set(x, y, Particle::new(HYDROGEN, p.temperature));
                 }
+                #[cfg(feature = "fluid-pde")]
+                if matches!(p.element_id, WATER | HEAVY_WATER) {
+                    // P5b steam explosion: water in contact with molten fuel
+                    // flashes to steam and the blast ejects its surroundings —
+                    // a real reactor-accident transient the MVP has no notion of.
+                    let xi = x as i32;
+                    let yi = y as i32;
+                    let contact = (-1..=1_i32)
+                        .flat_map(|dy| (-1..=1_i32).map(move |dx| (dx, dy)))
+                        .any(|(dx, dy)| {
+                            dx == 0 && dy == 0
+                                || self
+                                    .grid
+                                    .get((xi + dx) as u32, (yi + dy) as u32)
+                                    .is_some_and(|q| q.element_id == MOLTEN_FUEL)
+                        });
+                    if contact && rng.f32() < 0.6 {
+                        self.grid.set(x, y, Particle::new(STEAM, 2600));
+                        physics::apply_impulse(&mut self.grid, &mut self.velocities, x, y, 4, rng);
+                        for dy in -2..=2_i32 {
+                            for dx in -2..=2_i32 {
+                                let nx = xi + dx;
+                                let ny = yi + dy;
+                                if self.grid.in_bounds(nx, ny) {
+                                    self.grid.modify(nx as u32, ny as u32, |q| {
+                                        q.temperature = q.temperature.saturating_add(400);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
                 if p.element_id == TNT && p.temperature > reactions::TNT_IGNITE_TEMP {
                     self.trigger_tnt(x, y, rng);
                 }

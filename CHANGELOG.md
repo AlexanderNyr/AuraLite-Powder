@@ -15,6 +15,25 @@ nothing of render/ui/io/wasm. No entry here may break that invariant —
 
 Work toward the ROADMAP phases, applied on top of the upstream `main`.
 
+### Phase P5b — Pressure: steam-explosion transient — 2026-08-24  ✅
+*Deliverable: `patches/P5b_fluids.patch` (feature `fluid-pde`, opt-in)*
+
+- **Added** the `fluid-pde` feature (core + workspace), off by default — the
+  MVP has no pressure transients; save replay and the golden corpus are
+  unchanged (verified).
+- **Added** the steam explosion: under `fluid-pde`, water (or heavy water) in
+  contact with molten fuel flashes to steam and the blast ejects its
+  surroundings (`physics::apply_impulse`) with a heat spike — the real
+  reactor-accident transient the MVP lacks.
+- **Test gate (under `--features fluid-pde`):**
+  `steam_explosion_flashes_water_to_steam` — water around a molten core
+  produces steam and displaces mass out of the contact zone.
+- **Default build unchanged:** golden corpus identical; 60 integration + 10
+  unit tests green; fmt + clippy clean.
+- **Deferred:** the full Navier–Stokes-lite pressure/velocity solver (water
+  hammer, continuous advection) — the steam-explosion impulse is the testable
+  transient; the solver is a deeper, separate sub-phase.
+
 ### Phase P9a — Hardening: headless replay + long-run hash — 2026-08-24  ✅
 *Deliverable: `patches/P9a_replay.patch` (baseline: through `ci_green.patch`)*
 
