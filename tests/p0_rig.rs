@@ -418,3 +418,66 @@ fn deterministic_across_thread_counts() {
     assert_eq!(base, t2, "P2 determinism broken: 1-thread != 2-thread");
     assert_eq!(base, t4, "P2 determinism broken: 1-thread != 4-thread");
 }
+
+// ───────────────────────── P2b: parallel physics gates ──────────────────────
+/// A 256² grid takes the P2b parallel physics path (≥ 65 536 cells). The
+/// particles must actually move — this guards against a broken write-back
+/// silently turning the parallel pass into a no-op.
+#[test]
+fn parallel_physics_moves_particles() {
+    let mut sim = SimulationState::new(256, 256, SEED);
+    // A sand block near the top, spanning several chunks.
+    for y in 8..40 {
+        for x in 64..192 {
+            sim.grid.set(x, y, Particle::new(SAND, 293));
+        }
+    }
+    sim.refresh_chunks_public();
+    for _ in 0..60 {
+        sim.tick();
+    }
+    let lowest = sim
+        .grid
+        .element_ids()
+        .iter()
+        .enumerate()
+        .filter(|&(_, &id)| id == SAND)
+        .map(|(i, _)| (i / sim.grid.width as usize) as u32)
+        .max()
+        .unwrap_or(0);
+    assert!(
+        lowest > 60,
+        "parallel physics must move particles: sand lowest row {lowest} after 60 ticks"
+    );
+}
+
+/// Particles must be able to cross chunk borders (the border pass works):
+/// sand placed in the top chunk settles across several 32-cell chunk
+/// boundaries into the bottom chunk.
+#[test]
+fn particles_cross_chunk_borders() {
+    let mut sim = SimulationState::new(256, 256, SEED);
+    // A full-width sand layer in the top chunk (rows 0..31).
+    for y in 0..32 {
+        for x in 0..256 {
+            sim.grid.set(x, y, Particle::new(SAND, 293));
+        }
+    }
+    // A floor in the very bottom row.
+    for x in 0..256 {
+        sim.grid.set(x, 255, Particle::new(STONE, 293));
+    }
+    sim.refresh_chunks_public();
+    for _ in 0..400 {
+        sim.tick();
+    }
+    // Sand must have reached well past several chunk borders (each 32 rows).
+    let in_bottom_chunk = (224..255)
+        .flat_map(|y| (0..256).map(move |x| (x, y)))
+        .filter(|&(x, y)| sim.grid.get(x, y).is_some_and(|p| p.element_id == SAND))
+        .count();
+    assert!(
+        in_bottom_chunk > 100,
+        "sand must cross chunk borders and reach the bottom chunk (found {in_bottom_chunk} cells)"
+    );
+}

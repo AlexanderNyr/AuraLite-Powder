@@ -118,6 +118,194 @@ fn shuffle_row(xs: &mut [u32], rng: &mut fastrand::Rng) {
     }
 }
 
+// ───────────────────────── P2b: parallel physics pass ───────────────────────
+//
+// Structure (ROADMAP P2b): three phases per tick, all deterministic across
+// thread counts.
+//
+//   A. PARALLEL  — every active chunk is simulated independently on a local
+//      copy of its cells (+ velocities). During this phase the chunk borders
+//      act as walls: the shared grid is only read, each task mutates its own
+//      buffer, so no locks and no `unsafe` are needed.
+//   B. WRITE-BACK — the local buffers are copied back. Chunks are disjoint,
+//      so the order of the write-backs is irrelevant.
+//   C. BORDER PASS (sequential) — particles that ended up on a chunk's edge
+//      ring are re-run against the full grid, which lets them cross chunk
+//      borders. Particles that already moved carry `FLAG_MOVED` and are
+//      skipped, so a border crossing costs at most one extra tick.
+//
+// Determinism: the per-chunk RNG seeds are drawn from the shared RNG *before*
+// the parallel section (fixed chunk order), every chunk's result depends only
+// on the start-of-pass state plus its own seed, the write-back is disjoint,
+// and the border pass is sequential. Nothing depends on the rayon schedule.
+
+/// A chunk's simulated result, ready to be written back.
+struct LocalChunk {
+    cx: u32,
+    cy: u32,
+    grid: Grid,
+    vel: VelocityField,
+}
+
+/// P2b parallel physics pass. Call for grids with ≥ 65 536 cells; smaller grids
+/// should stay on the sequential `step_active` (the threshold matches the
+/// reaction pass, and keeps the golden corpus on one code path).
+pub fn step_active_parallel(
+    grid: &mut Grid,
+    vel: &mut VelocityField,
+    rng: &mut fastrand::Rng,
+    pool: &crate::chunk::ChunkPool,
+) {
+    use rayon::prelude::*;
+
+    let len = grid.len();
+    vel.sync_len(len);
+    for i in 0..len {
+        grid.clear_flag_at(i, Particle::FLAG_MOVED);
+        grid.clear_flag_at(i, Particle::FLAG_REACTED);
+    }
+
+    let chunks = pool.active_chunks();
+    if chunks.is_empty() {
+        return;
+    }
+
+    // Phase A — per-chunk seeds drawn before the parallel section (fixed order).
+    let seeds: Vec<u64> = chunks.iter().map(|_| rng.u64(..)).collect();
+
+    let grid_ref: &Grid = grid;
+    let vel_ref: &VelocityField = vel;
+    let results: Vec<LocalChunk> = chunks
+        .par_iter()
+        .zip(seeds.par_iter())
+        .map(|(&(cx, cy), &seed)| simulate_chunk(grid_ref, vel_ref, cx, cy, seed))
+        .collect();
+
+    // Phase B — write back. Disjoint regions; order irrelevant.
+    for lc in &results {
+        write_back_chunk(grid, vel, lc);
+    }
+
+    // Phase C — sequential border pass over the active chunks' edge rings.
+    border_pass(grid, vel, rng, &chunks);
+}
+
+/// Simulate one chunk in isolation: copy the region out, run the standard
+/// bottom-up sweep on the local grid (whose bounds act as walls), and return
+/// the result. Reuses `update_cell` and every update_* unchanged.
+///
+/// Cost control: only non-empty cells are copied in (the local grid starts as
+/// air), and the write-back diffs against the source, so resting chunks — the
+/// common case — cost almost nothing to round-trip.
+fn simulate_chunk(grid: &Grid, vel: &VelocityField, cx: u32, cy: u32, seed: u64) -> LocalChunk {
+    let cs = crate::chunk::CHUNK_SIZE as u32;
+    let x0 = cx * cs;
+    let y0 = cy * cs;
+    let x1 = (x0 + cs).min(grid.width);
+    let y1 = (y0 + cs).min(grid.height);
+    let cw = x1 - x0;
+    let ch = y1 - y0;
+
+    let mut local = Grid::new(cw, ch);
+    let mut lvel = VelocityField::new((cw * ch) as usize);
+    for y in 0..ch {
+        for x in 0..cw {
+            let gi = grid.index(x0 + x, y0 + y);
+            if grid.is_empty_at(gi) {
+                continue; // local is already air with zero velocity
+            }
+            let li = local.index(x, y);
+            local.set_particle_at(li, grid.particle_at(gi));
+            lvel.vx[li] = vel.vx[gi];
+            lvel.vy[li] = vel.vy[gi];
+        }
+    }
+
+    let mut lrng = fastrand::Rng::with_seed(seed);
+    let mut xs: Vec<u32> = (0..cw).collect();
+    for y in (0..ch).rev() {
+        shuffle_row(&mut xs, &mut lrng);
+        for &x in &xs {
+            update_cell(&mut local, &mut lvel, x, y, &mut lrng);
+        }
+    }
+
+    LocalChunk {
+        cx,
+        cy,
+        grid: local,
+        vel: lvel,
+    }
+}
+
+/// Copy a simulated chunk back into the shared grid / velocity field — only
+/// the cells that actually changed (particles and/or velocity).
+fn write_back_chunk(grid: &mut Grid, vel: &mut VelocityField, lc: &LocalChunk) {
+    let cs = crate::chunk::CHUNK_SIZE as u32;
+    let x0 = lc.cx * cs;
+    let y0 = lc.cy * cs;
+    for y in 0..lc.grid.height {
+        for x in 0..lc.grid.width {
+            let gi = grid.index(x0 + x, y0 + y);
+            let li = lc.grid.index(x, y);
+            let changed = grid.particle_at(gi) != lc.grid.particle_at(li)
+                || vel.vx[gi] != lc.vel.vx[li]
+                || vel.vy[gi] != lc.vel.vy[li];
+            if changed {
+                grid.set_particle_at(gi, lc.grid.particle_at(li));
+                vel.vx[gi] = lc.vel.vx[li];
+                vel.vy[gi] = lc.vel.vy[li];
+            }
+        }
+    }
+}
+
+/// Sequential pass over the edge ring (outermost row/column) of every active
+/// chunk, bottom-up with shuffled rows like the sequential sweep. This is
+/// where particles cross chunk borders: the full grid is passed to
+/// `update_cell`, so moves are not walled. Already-moved particles are skipped
+/// via `FLAG_MOVED`, keeping a border crossing to at most one extra tick.
+fn border_pass(
+    grid: &mut Grid,
+    vel: &mut VelocityField,
+    rng: &mut fastrand::Rng,
+    chunks: &[(u32, u32)],
+) {
+    let cs = crate::chunk::CHUNK_SIZE as u32;
+    let w = grid.width;
+    let h = grid.height;
+    let mut rows: Vec<Vec<u32>> = vec![Vec::new(); h as usize];
+    for &(cx, cy) in chunks {
+        let x0 = cx * cs;
+        let y0 = cy * cs;
+        let x1 = (x0 + cs).min(w);
+        let y1 = (y0 + cs).min(h);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                // The chunk's outer ring, pre-filtered to occupied, unmoved
+                // cells — already-moved particles are skipped by `update_cell`
+                // anyway, and empty ring cells can never move.
+                if (x == x0 || x == x1 - 1 || y == y0 || y == y1 - 1)
+                    && !grid.is_empty_at(grid.index(x, y))
+                    && !grid.has_flag_at(grid.index(x, y), Particle::FLAG_MOVED)
+                {
+                    rows[y as usize].push(x);
+                }
+            }
+        }
+    }
+    for y in (0..h).rev() {
+        let xs = &mut rows[y as usize];
+        if xs.is_empty() {
+            continue;
+        }
+        shuffle_row(xs, rng);
+        for &x in xs.iter() {
+            update_cell(grid, vel, x, y, rng);
+        }
+    }
+}
+
 fn update_cell(grid: &mut Grid, vel: &mut VelocityField, x: u32, y: u32, rng: &mut fastrand::Rng) {
     let Some(cur) = grid.get(x, y) else {
         return;

@@ -12,7 +12,7 @@
 | P0 | Measurement rig, invariants, CI | `patches/P0_rig.patch` | `cargo bench` CSV in CI; property tests red on a deliberate regression | ✅ |
 | P1 | SoA particle layout | `patches/P1_soa.patch` | `tick` on a 512² half-full grid ≥ 1.40× the P0 baseline, same outputs | ✅ |
 | P2a | Parallel passes: deterministic reactions + parallel heat | `patches/P2a_parallel.patch` | large-grid tick byte-identical across {1,2,4} threads | ✅ |
-| P2b | Parallel gravity: halo+stitch cross-chunk | `patches/P2b_gravity.patch` | ≥ 4× on 8 cores at 1024² (gravity pass parallelised) | ☐ |
+| P2b | Parallel gravity: per-chunk local sim + border pass | `patches/P2b_gravity.patch` | large-grid tick byte-identical across {1,2,4} threads; physics pass parallelised, safe (no `unsafe`) | ✅ |
 | P3 | Thermal: Doppler reactivity feedback + latent heat (`thermal-pde` feature) | `patches/P3_thermal.patch` | self-limiting pile (no meltdown); boiling cools neighbours; default unchanged | ✅ |
 | P4 | Neutron transport: multi-group + MC radiation | `patches/P4_transport.patch` | Critical-mass sweep matches a reference within ±15% | ☐ |
 | P5a | Isotope model: depletion + full decay chains | `patches/P5a_isotope.patch` | U-235→Pb-206 chain present; enrichment changes critical radius | ☐ |

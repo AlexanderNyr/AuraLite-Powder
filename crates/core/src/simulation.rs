@@ -634,12 +634,26 @@ impl SimulationState {
         if !self.settings.gravity_enabled {
             return;
         }
-        physics::step_active(
-            &mut self.grid,
-            &mut self.velocities,
-            rng,
-            Some(&self.chunk_pool),
-        );
+        // P2b: large grids run the physics pass in parallel (per-chunk local
+        // simulation + a sequential border pass). The threshold matches the
+        // reaction pass, so a tick is either fully sequential or fully
+        // parallel — which also keeps the golden corpus on one code path.
+        let total_cells = (self.grid.width as usize) * (self.grid.height as usize);
+        if total_cells >= 65536 {
+            physics::step_active_parallel(
+                &mut self.grid,
+                &mut self.velocities,
+                rng,
+                &self.chunk_pool,
+            );
+        } else {
+            physics::step_active(
+                &mut self.grid,
+                &mut self.velocities,
+                rng,
+                Some(&self.chunk_pool),
+            );
+        }
     }
 
     fn reaction_pass(&mut self, rng: &mut fastrand::Rng) {

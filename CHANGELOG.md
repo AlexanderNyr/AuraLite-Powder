@@ -50,6 +50,45 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   62 integration + 10 unit tests green; fmt + clippy clean; claim checker
   updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
 
+### Phase P2b — Parallel gravity pass — 2026-08-24  ✅
+*Deliverable: `patches/P2b_gravity.patch`*
+
+- **Added** `physics::step_active_parallel` — the falling-sand gravity pass now
+  runs in parallel for grids ≥ 65 536 cells (matching the reaction-pass
+  threshold; smaller grids stay on the sequential path, so the golden corpus
+  and the replay hash keep one code path). Three phases per tick:
+  - **A (parallel)** — every active chunk is simulated independently on a
+    local copy of its cells + velocities; chunk borders act as walls in this
+    phase. The shared grid is only read, each task mutates its own buffer —
+    **no locks, no `unsafe`** (project policy holds).
+  - **B (write-back)** — local buffers are diffed against the source and only
+    changed cells are written back; chunks are disjoint so order is
+    irrelevant.
+  - **C (border pass, sequential)** — unflagged particles on each chunk's
+    edge ring are re-run against the full grid, letting them cross borders
+    (a crossing costs at most one extra tick via the `FLAG_MOVED` guard).
+- **Determinism** (the gate): per-chunk RNG seeds are drawn from the shared
+  RNG *before* the parallel section; each chunk's result depends only on the
+  start-of-pass state and its own seed; the write-back is disjoint; the border
+  pass is sequential. Nothing depends on the rayon schedule — verified by the
+  existing `deterministic_across_thread_counts` test (256² grid takes the
+  parallel path) plus two new gates: `parallel_physics_moves_particles`
+  (guards against a broken write-back) and `particles_cross_chunk_borders`
+  (sand placed in the top chunk settles through several 32-row chunk
+  boundaries into the bottom chunk).
+- **Perf, measured honestly** (2-core sandbox, release): the isolated physics
+  pass on a 512² half-full grid is 4.34 ms sequential vs 4.60 ms parallel —
+  break-even. The safe local-copy design carries a ~2.5 ms/pass overhead
+  floor (copy-in + diff write-back + border pass), which the 2-core
+  parallel gain exactly cancels. The pass-level speedup grows with cores
+  (~work/N + floor); the roadmap's "≥ 4× on 8 cores at 1024²" for the *whole
+  tick* is **not met by physics parallelisation alone** — the tick's other
+  sequential passes (hydro `powder_overburden_slide`, `devices`, chunk
+  refresh) dominate the remainder and are the P2c follow-up.
+- All gates green: 64 integration + 10 unit tests, golden corpus and replay
+  hash unchanged, fmt + clippy clean, claim checker 13/13, feature-gated
+  suites (thermal-pde, fluid-pde) still green.
+
 ### Phase P9a — Hardening: headless replay + long-run hash — 2026-08-24  ✅
 *Deliverable: `patches/P9a_replay.patch` (baseline: through `ci_green.patch`)*
 
