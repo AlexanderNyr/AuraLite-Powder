@@ -51,6 +51,12 @@ pub struct SimulationState {
     /// Approximate k-effective, refreshed every tick from live cell counts.
     #[serde(default)]
     pub k_effective: f32,
+    /// Measured k-effective (P4): the fission-rate growth between consecutive
+    /// windows, corrected to a per-generation ratio. Unlike `k_effective`
+    /// (a closed-form estimate from cell counts), this is measured from what
+    /// the chain actually does — 1.0 is self-sustaining by construction.
+    #[serde(default)]
+    pub k_measured: f32,
     /// Smoothed fissions-per-tick — the "power" needle.
     #[serde(default)]
     pub power: f32,
@@ -68,6 +74,11 @@ pub struct SimulationState {
     pub mission: Option<crate::missions::MissionSave>,
     #[serde(skip, default)]
     fission_at_last_hud: u64,
+    /// P4 k-measurement window state (not serialized; rebuilt within a tick).
+    #[serde(skip, default)]
+    fission_window: u64,
+    #[serde(skip, default)]
+    fission_prev_window: u64,
     #[serde(skip, default)]
     pub chunk_pool: ChunkPool,
     #[serde(skip, default)]
@@ -90,6 +101,7 @@ impl SimulationState {
             fusion_count: 0,
             decay_count: 0,
             k_effective: 0.0,
+            k_measured: 0.0,
             power: 0.0,
             period_ticks: 0.0,
             trend: 0,
@@ -97,6 +109,8 @@ impl SimulationState {
             xenon_count: 0,
             mission: None,
             fission_at_last_hud: 0,
+            fission_window: 0,
+            fission_prev_window: 0,
             chunk_pool: ChunkPool::new(width, height),
             velocities: VelocityField::new((width * height) as usize),
             pressure: PressureField::new((width * height) as usize),
@@ -212,6 +226,27 @@ impl SimulationState {
         self.update_reactor_hud();
     }
 
+    /// P4 measured k-effective. The neutron population is proportional to the
+    /// fission rate, so the ratio of fissions between two consecutive windows
+    /// estimates k^(window/generation-time). Correcting the exponent back to
+    /// one generation gives k directly. Only trusted when both windows carry
+    /// enough fissions (>= 3) — a dying chain's late windows are noise, and
+    /// freezing the last trusted value is the honest answer there.
+    fn update_k_measured(&mut self) {
+        const K_WINDOW: u64 = 12;
+        const GEN_TICKS: f32 = 3.0;
+        if !self.tick.is_multiple_of(K_WINDOW) {
+            return;
+        }
+        if self.fission_prev_window >= 3 && self.fission_window >= 1 {
+            let ratio = self.fission_window as f32 / self.fission_prev_window as f32;
+            let k = ratio.powf(GEN_TICKS / K_WINDOW as f32);
+            self.k_measured = k.clamp(0.0, 3.5);
+        }
+        self.fission_prev_window = self.fission_window;
+        self.fission_window = 0;
+    }
+
     fn update_reactor_hud(&mut self) {
         let df = self.fission_count.saturating_sub(self.fission_at_last_hud) as f32;
         self.fission_at_last_hud = self.fission_count;
@@ -241,6 +276,7 @@ impl SimulationState {
 
     pub fn tick(&mut self) {
         self.tick += 1;
+        self.update_k_measured();
         self.refresh_chunks();
         let mut rng = fastrand::Rng::with_seed(self.seed.wrapping_add(self.tick));
         self.process_neutron_queue(&mut rng);
@@ -564,10 +600,14 @@ impl SimulationState {
                 if cell.is_empty() {
                     let temp = match ev.energy {
                         NeutronEnergy::Thermal => 350,
+                        // Epithermal neutrons present as fast particles on the
+                        // grid; the group distinction lives in the queue.
+                        NeutronEnergy::Epithermal => 600,
                         NeutronEnergy::Fast => 800,
                     };
                     let id = match ev.energy {
                         NeutronEnergy::Thermal => NEUTRON_THERMAL,
+                        NeutronEnergy::Epithermal => NEUTRON_FAST,
                         NeutronEnergy::Fast => NEUTRON_FAST,
                     };
                     self.grid
@@ -616,15 +656,19 @@ impl SimulationState {
                     }
                     self.reaction_count += 1;
                 } else if is_moderator(cell_id)
-                    && ev.energy == NeutronEnergy::Fast
+                    && ev.energy != NeutronEnergy::Thermal
                     && rng.f32() < reactions::moderator_thermalize_chance(cell_id)
                 {
-                    self.neutron_queue.push_back(NeutronEvent {
-                        x: x.saturating_add_signed(rng.i32(-1..=1)),
-                        y: y.saturating_add_signed(rng.i32(-1..=1)),
-                        delay: 1,
-                        energy: NeutronEnergy::Thermal,
-                    });
+                    // P4 two-step moderation: one collision steps the neutron
+                    // down a single group (fast → epithermal → thermal).
+                    if let Some(down) = reactions::moderator_downscatter(ev.energy) {
+                        self.neutron_queue.push_back(NeutronEvent {
+                            x: x.saturating_add_signed(rng.i32(-1..=1)),
+                            y: y.saturating_add_signed(rng.i32(-1..=1)),
+                            delay: 1,
+                            energy: down,
+                        });
+                    }
                 }
             }
         }
@@ -745,6 +789,7 @@ impl SimulationState {
         product.set_flag(Particle::FLAG_REACTED);
         self.grid.set(x, y, product);
         self.fission_count += 1;
+        self.fission_window += 1;
         self.reaction_count += 1;
 
         let n_count = reactions::neutron_count(orig.element_id, rng)

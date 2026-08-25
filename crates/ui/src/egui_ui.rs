@@ -131,6 +131,10 @@ pub fn show_info_panel(ui: &mut Ui, app: &AppState) {
     ui.label(format!("Decay: {}", app.simulation.decay_count));
     ui.label(format!("k-eff: {:.3}", app.simulation.k_effective));
     ui.label(format!(
+        "k-measured: {:.3}  (from the fission chain; 1.0 = self-sustaining)",
+        app.simulation.k_measured
+    ));
+    ui.label(format!(
         "Power: {:.2}  {}",
         app.simulation.power,
         app.simulation.reactor_status()

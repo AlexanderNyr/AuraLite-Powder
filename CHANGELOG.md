@@ -50,6 +50,45 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   62 integration + 10 unit tests green; fmt + clippy clean; claim checker
   updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
 
+### Phase P4 — Neutron transport: 3-group moderation + measured k-effective — 2026-08-24  ✅
+*Deliverable: `patches/P4_transport.patch`*
+
+- **Added** the epithermal (resonance) group to `NeutronEnergy`. Moderation now
+  steps a neutron down **one group per collision** (fast → epithermal →
+  thermal) instead of jumping straight to thermal — the two-collision
+  moderation real neutrons need. The group distinction lives in the neutron
+  *queue*; grid particles remain fast/thermal, so **no new element ids** and
+  the enum variant order preserves old saves (`Thermal`=0, `Fast`=1 unchanged,
+  `Epithermal`=2 appended).
+- **Added** per-group fission and absorption probabilities for all five
+  fissile isotopes and all four absorbers (epithermal sits between thermal and
+  fast; U-238/Pu-240 keep their threshold shape — fast beats thermal). All
+  pre-P4 thermal/fast values are byte-identical.
+- **Added** the **measured k-effective** (`k_measured`): the fission-rate ratio
+  between consecutive 12-tick windows, exponent-corrected to a per-generation
+  ratio (generation ≈ 3 ticks). Unlike `k_effective` (a closed-form estimate
+  from cell counts), this is measured from what the chain actually does — 1.0
+  means self-sustaining by construction. Shown in the HUD next to the formula
+  value; trusted only when both windows carry ≥ 3 fissions (a dying chain's
+  late windows are noise; freezing the last trusted value is the honest answer).
+- **Gates (7 new tests):** per-group probability ordering; downscatter chain;
+  moderation observably passes through epithermal (queue inspection after one
+  water collision shows an epithermal event, not thermal); a small bare pile's
+  measured k < 0.95 (subcritical); the measured k grows with moderated pile
+  size (the critical-mass sweep, gated self-consistently — no external
+  reference exists for this toy); a graphite reflector raises the measured k
+  of the same fuel load.
+- **Reviewed model change:** two-step moderation changes the chain dynamics in
+  moderated scenes — the golden corpus re-recorded for `scenario_coolant_loop`
+  only (826 → 824 cells); the other five scenes are byte-identical. The P9a
+  replay hash (a sand/water scene, no neutrons) is unchanged.
+- All suites green: 71 integration + 10 unit; fmt + clippy clean; claim
+  checker 13/13; feature-gated suites (thermal-pde, fluid-pde) still green.
+- **Deferred:** MC radiation transport (the existing penetration model already
+  implements shielding; MC is a refinement) and a true neutron-generation census
+  (the windowed fission-ratio estimator measures the same quantity without
+  per-particle generation tagging).
+
 ### Phase P2b — Parallel gravity pass — 2026-08-24  ✅
 *Deliverable: `patches/P2b_gravity.patch`*
 

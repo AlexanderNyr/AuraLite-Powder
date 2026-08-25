@@ -120,7 +120,10 @@ impl ReactionTable {
             },
         );
 
-        // Moderation: fast neutron + water -> thermal
+        // Moderation: fast neutron + water -> thermal. Since P4 the runtime
+        // moderates in TWO steps (fast -> epithermal -> thermal, one group per
+        // collision); the table records the net effect. The epithermal group is
+        // a queue-energy, not an element, so it has no row here.
         table.insert(
             NEUTRON_FAST,
             WATER,

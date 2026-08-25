@@ -8,10 +8,28 @@ use crate::element_id::*;
 use serde::{Deserialize, Serialize};
 
 /// Neutron kinetic-energy bin used by fission / moderation / absorption.
+///
+/// P4 adds the epithermal (resonance) group between fast and thermal. It is a
+/// *queue-transient* state: moderation steps a neutron down one group per
+/// moderator collision (fast → epithermal → thermal), while particles on the
+/// grid remain fast or thermal (epithermal events spawn as fast particles).
+/// Variant order is load-bearing for save compatibility: Thermal=0 and Fast=1
+/// match the pre-P4 bincode encoding, so old saves decode unchanged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NeutronEnergy {
     Thermal,
     Fast,
+    Epithermal,
+}
+
+/// One moderation collision steps a neutron down a single energy group.
+/// Thermal neutrons have nothing to downscatter to.
+pub fn moderator_downscatter(energy: NeutronEnergy) -> Option<NeutronEnergy> {
+    match energy {
+        NeutronEnergy::Fast => Some(NeutronEnergy::Epithermal),
+        NeutronEnergy::Epithermal => Some(NeutronEnergy::Thermal),
+        NeutronEnergy::Thermal => None,
+    }
 }
 
 pub const FUSION_THRESHOLD: u16 = 1500;
@@ -28,26 +46,34 @@ pub const FISSION_SELF_HEAT: u16 = 500;
 pub const FUSION_RADIUS_HEAT: u16 = 800;
 
 /// Base fission probability before the temperature modifier.
+/// Epithermal sits between fast and thermal — the resonance region, where
+/// U-238's threshold behaviour is already visible but the fissile isotopes are
+/// not yet at their thermal peaks.
 pub fn fission_base_probability(element_id: u16, energy: NeutronEnergy) -> f32 {
     match element_id {
         U235 => match energy {
             NeutronEnergy::Thermal => 0.85,
+            NeutronEnergy::Epithermal => 0.55,
             NeutronEnergy::Fast => 0.35,
         },
         PU239 => match energy {
             NeutronEnergy::Thermal => 0.90,
+            NeutronEnergy::Epithermal => 0.60,
             NeutronEnergy::Fast => 0.40,
         },
         U238 => match energy {
             NeutronEnergy::Thermal => 0.02,
+            NeutronEnergy::Epithermal => 0.12,
             NeutronEnergy::Fast => 0.25,
         },
         PU240 => match energy {
             NeutronEnergy::Thermal => 0.10,
+            NeutronEnergy::Epithermal => 0.18,
             NeutronEnergy::Fast => 0.30,
         },
         MOLTEN_FUEL => match energy {
             NeutronEnergy::Thermal => 0.50,
+            NeutronEnergy::Epithermal => 0.38,
             NeutronEnergy::Fast => 0.30,
         },
         _ => 0.0,
@@ -154,10 +180,13 @@ pub fn moderator_thermalize_chance(id: u16) -> f32 {
 pub fn absorber_chance(id: u16, energy: NeutronEnergy) -> f32 {
     match (id, energy) {
         (BORON, NeutronEnergy::Thermal) => 0.8,
+        (BORON, NeutronEnergy::Epithermal) => 0.7,
         (BORON, NeutronEnergy::Fast) => 0.6,
         (CONTROL_ROD, NeutronEnergy::Thermal) => 0.92,
+        (CONTROL_ROD, NeutronEnergy::Epithermal) => 0.80,
         (CONTROL_ROD, NeutronEnergy::Fast) => 0.70,
         (XENON, NeutronEnergy::Thermal) => 0.95,
+        (XENON, NeutronEnergy::Epithermal) => 0.72,
         (XENON, NeutronEnergy::Fast) => 0.55,
         // I-135 is a real (if weaker than Xe-135) neutron absorber. Without this
         // arm, `absorber_chance(IODINE, _)` returned 0, so the dedicated iodine
@@ -165,6 +194,7 @@ pub fn absorber_chance(id: u16, energy: NeutronEnergy) -> f32 {
         // was still counted toward the absorber total used for k-effective, making
         // the criticality estimate inconsistent with actual reactivity.
         (IODINE, NeutronEnergy::Thermal) => 0.35,
+        (IODINE, NeutronEnergy::Epithermal) => 0.22,
         (IODINE, NeutronEnergy::Fast) => 0.12,
         _ => 0.0,
     }

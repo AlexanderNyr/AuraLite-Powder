@@ -110,7 +110,7 @@ fn golden_scenes() -> Vec<(
             Box::new(|sim| {
                 sim.load_scenario(Scenario::CoolantLoop);
             }),
-            (826, 0xf6e5d2ba81977e49),
+            (824, 0xec4b4fda53a81fbc),
         ),
         (
             "scenario_ice_melt",
