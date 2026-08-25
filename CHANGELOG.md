@@ -50,6 +50,42 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   62 integration + 10 unit tests green; fmt + clippy clean; claim checker
   updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
 
+### Phase P2c — Scan elimination: classify-once gating + parallel pressure — 2026-08-24  ✅
+*Deliverable: `patches/P2c_scans.patch`*
+
+- **Profiled first** (2-core sandbox, release, 512² half-full sand — the bench
+  shape): physics 4.11 ms, devices **3.52 ms** (pure waste — two full-grid
+  snapshot Vecs + three pressure scans with zero devices present), reactions +
+  effects 3.89 ms, overburden 0.86 ms, pipes 0.47 ms (no pipes!), refresh
+  0.38 ms.
+- **Added classify-once gating**: `refresh_chunks` — already the one mandatory
+  full-grid scan — now also counts liquid / powder / device / pipe cells
+  (`liquid_cells` etc. on `SimulationState`), and `tick()` skips whole passes
+  whose element class is absent. The counters are an upper bound at gate time
+  (nothing creates those elements between refresh and the gated pass), so a
+  skip is exactly a no-op skip. The per-cell `chunk_pool` lookups were also
+  replaced with one whole-chunk `activate()` per occupied chunk (the dirty
+  bbox is unused downstream).
+- **RNG-stream discipline** (the phase's hard part, learned the honest way):
+  a pass may only be skipped if it draws **no** rng when its class is absent.
+  `equalize_liquid_surface` draws `rng.bool()` unconditionally → never gated;
+  `apply_pressure_flow` draws `rng.bool()` per row unconditionally → always
+  runs; `diffuse_pressure` / `apply_overpressure` / the device loop / pipes /
+  hydrostatic draw nothing when absent → safely gated. Two corpus drifts were
+  caught by the golden corpus exactly as designed, root-caused to these two
+  unconditional draws, and fixed before merge.
+- **Added** a reused scratch buffer to `PressureField` (no more full-grid
+  clone per tick) and **parallelised `diffuse_pressure`** (rayon over rows) —
+  a Jacobi sweep with integer arithmetic and no rng, so it is bit-identical at
+  any thread count.
+- **Measured:** 512² bench 13.6 → **8.23 ms (×1.65)**; 256² bench 4.33 →
+  **2.88 ms (×1.50)**; devices pass 3.52 → 0.09–0.22 ms on device-free
+  scenes. Water scene (live hydrostatic pressure) 13.6 → 12.7 ms.
+- **Gates:** golden corpus byte-identical, P9a replay hash unchanged, P2a/b
+  determinism green, new `classify_counters_match_grid` unit gate; 76
+  integration + 10 unit tests green; fmt + clippy clean; claim checker 13/13;
+  feature suites green.
+
 ### Phase P5a — Isotope model: U-238 breeding + depletion — 2026-08-24  ✅
 *Deliverable: `patches/P5a_isotope.patch`*
 

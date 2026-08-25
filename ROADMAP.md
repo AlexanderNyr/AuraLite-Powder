@@ -15,6 +15,7 @@
 | P2b | Parallel gravity: per-chunk local sim + border pass | `patches/P2b_gravity.patch` | large-grid tick byte-identical across {1,2,4} threads; physics pass parallelised, safe (no `unsafe`) | ✅ |
 | P3 | Thermal: Doppler reactivity feedback + latent heat (`thermal-pde` feature) | `patches/P3_thermal.patch` | self-limiting pile (no meltdown); boiling cools neighbours; default unchanged | ✅ |
 | P4 | Neutron transport: 3-group moderation + measured k-effective | `patches/P4_transport.patch` | moderation steps fast→epi→thermal; k-measured subcritical <1, grows with pile size; reflector raises k | ✅ |
+| P2c | Scan elimination: classify-once gating + parallel pressure | `patches/P2c_scans.patch` | zero drift on corpus/replay/determinism; 512² bench ≥ 1.4× faster | ✅ |
 | P5a | Isotope model: U-238 breeding + depletion | `patches/P5a_isotope.patch` | U-238 breeds Pu-239; enrichment falls as a pile burns; enrichment raises measured k | ✅ |
 | P5b | Pressure: steam-explosion transient (`fluid-pde` feature) | `patches/P5b_fluids.patch` | water + molten fuel → steam + mass ejection; default unchanged | ✅ |
 | P6 | GPU pipeline: real wgpu present + optional compute | `patches/P6_gpu.patch` | 4 KTester frames at 60 FPS on integrated GPU; compute path opt-in | ☐ |

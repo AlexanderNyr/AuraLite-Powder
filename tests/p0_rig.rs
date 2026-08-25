@@ -481,3 +481,40 @@ fn particles_cross_chunk_borders() {
         "sand must cross chunk borders and reach the bottom chunk (found {in_bottom_chunk} cells)"
     );
 }
+
+// ───────────────────────── P2c: classify-once counters ──────────────────────
+/// The refresh scan's element-class counters must match the grid contents —
+/// they gate whole passes in `tick()`, so a mis-count would silently skip
+/// physics.
+#[test]
+fn classify_counters_match_grid() {
+    let mut sim = SimulationState::new(64, 64, 1);
+    // 8 water (liquid), 12 sand (powder), 3 pipes, 1 heater (device),
+    // 1 wire (device), 1 fire (device), 5 stone (neither).
+    for x in 0..8 {
+        sim.grid.set(x, 10, Particle::new(WATER, 293));
+    }
+    for x in 0..12 {
+        sim.grid.set(x, 20, Particle::new(SAND, 293));
+    }
+    for x in 0..3 {
+        sim.grid.set(x, 30, Particle::new(PIPE, 293));
+    }
+    sim.grid.set(5, 40, Particle::new(HEATER, 293));
+    sim.grid.set(6, 40, Particle::new(WIRE, 293));
+    sim.grid.set(7, 40, Particle::new(FIRE, 1100));
+    for x in 0..5 {
+        sim.grid.set(x, 50, Particle::new(STONE, 293));
+    }
+    sim.refresh_chunks_public();
+    assert_eq!(sim.liquid_cells, 8, "water cells");
+    assert_eq!(sim.powder_cells, 12, "sand cells");
+    assert_eq!(sim.pipe_cells, 3, "pipe cells");
+    assert_eq!(sim.device_cells, 3, "heater + wire + fire cells");
+    // And the chunk active set still covers every non-empty chunk.
+    let active = sim.chunk_pool.active_chunks();
+    assert!(
+        active.contains(&(0, 0)),
+        "the chunk holding all particles must be active"
+    );
+}

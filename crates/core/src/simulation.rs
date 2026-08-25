@@ -79,6 +79,18 @@ pub struct SimulationState {
     fission_window: u64,
     #[serde(skip, default)]
     fission_prev_window: u64,
+    /// P2c classify-once counters, refreshed by `refresh_chunks`. They are an
+    /// upper bound for the passes they gate (nothing creates these elements
+    /// between refresh and the gated pass), so gating on them is
+    /// behaviour-identical: a stale-positive count just runs a no-op pass.
+    #[serde(skip, default)]
+    pub liquid_cells: u32,
+    #[serde(skip, default)]
+    pub powder_cells: u32,
+    #[serde(skip, default)]
+    pub device_cells: u32,
+    #[serde(skip, default)]
+    pub pipe_cells: u32,
     #[serde(skip, default)]
     pub chunk_pool: ChunkPool,
     #[serde(skip, default)]
@@ -111,6 +123,10 @@ impl SimulationState {
             fission_at_last_hud: 0,
             fission_window: 0,
             fission_prev_window: 0,
+            liquid_cells: 0,
+            powder_cells: 0,
+            device_cells: 0,
+            pipe_cells: 0,
             chunk_pool: ChunkPool::new(width, height),
             velocities: VelocityField::new((width * height) as usize),
             pressure: PressureField::new((width * height) as usize),
@@ -191,37 +207,74 @@ impl SimulationState {
         let mut absorber = 0u32;
         let mut iodine = 0u32;
         let mut xenon = 0u32;
+        let mut liquid = 0u32;
+        let mut powder = 0u32;
+        let mut device = 0u32;
+        let mut pipe = 0u32;
         let w = self.grid.width;
         let h = self.grid.height;
         let cs = CHUNK_SIZE as u32;
-        for y in 0..h {
-            for x in 0..w {
-                let id = self.grid.element_at(self.grid.index(x, y));
-                if id == AIR {
-                    continue;
+        // P2c: one classification scan, chunk-major so each chunk is activated
+        // once instead of per-cell (the dirty bbox is unused downstream — only
+        // `active || !is_empty` feeds the pass scheduling).
+        let ids = self.grid.element_ids();
+        for cy in 0..self.chunk_pool.chunks_y {
+            for cx in 0..self.chunk_pool.chunks_x {
+                let x0 = cx * cs;
+                let y0 = cy * cs;
+                let x1 = (x0 + cs).min(w);
+                let y1 = (y0 + cs).min(h);
+                let mut has_any = false;
+                for y in y0..y1 {
+                    let row = y * w;
+                    for x in x0..x1 {
+                        let id = ids[(row + x) as usize];
+                        if id == AIR {
+                            continue;
+                        }
+                        has_any = true;
+                        if is_fissile(id) {
+                            fissile += 1;
+                        }
+                        if is_moderator(id) {
+                            moderator += 1;
+                        }
+                        if matches!(id, BORON | CONTROL_ROD | XENON | IODINE) {
+                            absorber += 1;
+                        }
+                        if id == IODINE {
+                            iodine += 1;
+                        }
+                        if id == XENON {
+                            xenon += 1;
+                        }
+                        if is_liquid(id) {
+                            liquid += 1;
+                        }
+                        if is_powder(id) {
+                            powder += 1;
+                        }
+                        if is_device_element(id) {
+                            device += 1;
+                        }
+                        if is_pipe(id) {
+                            pipe += 1;
+                        }
+                    }
                 }
-                if let Some(meta) = self.chunk_pool.get_mut(x / cs, y / cs) {
-                    meta.mark_dirty(x % cs, y % cs);
-                }
-                if is_fissile(id) {
-                    fissile += 1;
-                }
-                if is_moderator(id) {
-                    moderator += 1;
-                }
-                if matches!(id, BORON | CONTROL_ROD | XENON | IODINE) {
-                    absorber += 1;
-                }
-                if id == IODINE {
-                    iodine += 1;
-                }
-                if id == XENON {
-                    xenon += 1;
+                if has_any {
+                    if let Some(meta) = self.chunk_pool.get_mut(cx, cy) {
+                        meta.activate();
+                    }
                 }
             }
         }
         self.iodine_count = iodine;
         self.xenon_count = xenon;
+        self.liquid_cells = liquid;
+        self.powder_cells = powder;
+        self.device_cells = device;
+        self.pipe_cells = pipe;
         self.k_effective = reactions::criticality_factor(fissile, moderator, absorber);
         self.update_reactor_hud();
     }
@@ -281,8 +334,18 @@ impl SimulationState {
         let mut rng = fastrand::Rng::with_seed(self.seed.wrapping_add(self.tick));
         self.process_neutron_queue(&mut rng);
         self.physics_pass(&mut rng);
+        // P2c classify-once gating: skip whole passes whose element class is
+        // absent. The counters come from this tick's refresh and are an upper
+        // bound here, so a skip is exactly a no-op skip. NOTE:
+        // `equalize_liquid_surface` is deliberately NOT gated — it draws rng
+        // unconditionally (`rng.bool()` for row order), so skipping it would
+        // shift the rng stream for every later pass. Every gated pass below
+        // consumes rng ONLY inside its per-element branch, so an absent class
+        // draws nothing in either path — stream-identical.
         crate::hydro::equalize_liquid_surface(&mut self.grid, &mut self.velocities, &mut rng);
-        crate::hydro::powder_overburden_slide(&mut self.grid, &mut self.velocities, &mut rng);
+        if self.powder_cells > 0 {
+            crate::hydro::powder_overburden_slide(&mut self.grid, &mut self.velocities, &mut rng);
+        }
         devices::step_devices(
             &mut self.grid,
             &mut self.velocities,
@@ -290,14 +353,19 @@ impl SimulationState {
             &mut rng,
             self.k_effective,
             Some(&self.chunk_pool),
+            self.device_cells,
         );
-        crate::hydro::add_hydrostatic_pressure(&self.grid, &mut self.pressure);
-        crate::hydro::step_pipe_network(
-            &mut self.grid,
-            &mut self.velocities,
-            &mut self.pressure,
-            &mut rng,
-        );
+        if self.liquid_cells > 0 || self.pipe_cells > 0 {
+            crate::hydro::add_hydrostatic_pressure(&self.grid, &mut self.pressure);
+        }
+        if self.pipe_cells > 0 {
+            crate::hydro::step_pipe_network(
+                &mut self.grid,
+                &mut self.velocities,
+                &mut self.pressure,
+                &mut rng,
+            );
+        }
 
         let total_cells = self.grid.width as usize * self.grid.height as usize;
         if total_cells >= 65536 {

@@ -237,6 +237,29 @@ pub fn is_conductive(id: u16) -> bool {
     matches!(id, WIRE | HEATER | SENSOR | STEEL | SPARK | PUMP)
 }
 
+/// The elements `devices::step_devices` actually acts on (heaters, pumps,
+/// fire and its fuels, the electrical family, steam). Used by P2c's
+/// classify-once gating: when none of these exist, the whole device pass
+/// (including its full-grid snapshots) is skipped.
+pub fn is_device_element(id: u16) -> bool {
+    matches!(
+        id,
+        HEATER
+            | PUMP
+            | FIRE
+            | ACID
+            | WOOD
+            | COAL
+            | HYDROGEN
+            | SPARK
+            | WIRE
+            | SENSOR
+            | FILTER
+            | CONTROL_ROD
+            | STEAM
+    )
+}
+
 pub fn is_device(id: u16) -> bool {
     matches!(
         id,

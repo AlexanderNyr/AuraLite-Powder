@@ -44,6 +44,14 @@ impl ChunkMeta {
             self.dirty_max_y = local_y;
         }
     }
+    /// Activate the chunk without touching the (unused) dirty bbox — the pass
+    /// schedulers only consult `active || !is_empty`, so a whole-chunk
+    /// activation is equivalent to per-cell `mark_dirty` at a fraction of the
+    /// cost (P2c).
+    pub fn activate(&mut self) {
+        self.is_empty = false;
+        self.active = true;
+    }
     pub fn clear(&mut self) {
         self.dirty_min_x = CHUNK_SIZE as u32;
         self.dirty_min_y = CHUNK_SIZE as u32;

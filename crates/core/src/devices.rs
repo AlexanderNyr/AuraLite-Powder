@@ -4,15 +4,22 @@ use crate::element_id::*;
 use crate::grid::Grid;
 use crate::particle::Particle;
 use crate::physics::VelocityField;
+use rayon::prelude::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct PressureField {
     pub p: Vec<u16>,
+    /// Reused Jacobi scratch (P2c): swapping beats cloning a full-grid Vec
+    /// every tick. Not serialized — the field itself is serde-skipped.
+    scratch: Vec<u16>,
 }
 
 impl PressureField {
     pub fn new(len: usize) -> Self {
-        Self { p: vec![0; len] }
+        Self {
+            p: vec![0; len],
+            scratch: Vec::new(),
+        }
     }
     pub fn sync_len(&mut self, len: usize) {
         if self.p.len() != len {
@@ -28,7 +35,25 @@ pub fn step_devices(
     rng: &mut fastrand::Rng,
     k_eff: f32,
     pool: Option<&crate::chunk::ChunkPool>,
+    device_cells: u32,
 ) {
+    // P2c classify-once gate: with no device/fire/fuel/steam cells the loop
+    // body can never fire, so the two full-grid snapshots are pure waste. The
+    // pressure solver is skipped only where that is rng-stream-identical:
+    // `diffuse_pressure` and `apply_overpressure` draw no rng unconditionally
+    // (and no-op on a dead field), but `apply_pressure_flow` draws one
+    // `rng.bool()` per row UNCONDITIONALLY — so it must always run to keep the
+    // stream identical for the passes that follow.
+    if device_cells == 0 {
+        if pressure.p.iter().any(|&v| v > 0) {
+            diffuse_pressure(grid, pressure, grid.width, grid.height);
+            apply_pressure_flow(grid, vel, pressure, rng);
+            apply_overpressure(grid, pressure, rng);
+        } else {
+            apply_pressure_flow(grid, vel, pressure, rng);
+        }
+        return;
+    }
     let w = grid.width;
     let h = grid.height;
     let len = grid.len();
@@ -471,16 +496,26 @@ fn conducts_pressure(id: u16) -> bool {
 }
 
 fn diffuse_pressure(grid: &Grid, pressure: &mut PressureField, w: u32, h: u32) {
-    let mut next = pressure.p.clone();
-    for y in 0..h {
+    if pressure.scratch.len() != pressure.p.len() {
+        pressure.scratch.resize(pressure.p.len(), 0);
+    }
+    let mut next = std::mem::take(&mut pressure.scratch);
+    // P2c: a Jacobi sweep — every next[i] depends only on the CURRENT p and
+    // the grid's element ids, never on other next[] cells — so it is
+    // embarrassingly parallel. The arithmetic is all integer (no rng), so the
+    // result is bit-identical at any thread count.
+    let cur = &pressure.p;
+    let wu = w as usize;
+    next.par_chunks_mut(wu).enumerate().for_each(|(y, row)| {
+        let y = y as u32;
         for x in 0..w {
             let i = (y * w + x) as usize;
             let id = grid.element_at(i);
             if !conducts_pressure(id) {
-                next[i] = pressure.p[i].saturating_sub(2);
+                row[x as usize] = cur[i].saturating_sub(2);
                 continue;
             }
-            let mut acc = pressure.p[i] as u32;
+            let mut acc = cur[i] as u32;
             let mut n = 1u32;
             for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                 let nx = x as i32 + dx;
@@ -492,13 +527,17 @@ fn diffuse_pressure(grid: &Grid, pressure: &mut PressureField, w: u32, h: u32) {
                 if !conducts_pressure(grid.element_at(j)) {
                     continue;
                 }
-                acc += pressure.p[j] as u32;
+                acc += cur[j] as u32;
                 n += 1;
             }
-            next[i] = ((acc / n) as u16).saturating_sub(1);
+            row[x as usize] = ((acc / n) as u16).saturating_sub(1);
         }
-    }
-    pressure.p = next;
+    });
+    // Swap: the freshly computed `next` becomes the live field, and the old
+    // field (taken out of `scratch` above) is written back as the next
+    // scratch — no full-grid clone, no realloc.
+    std::mem::swap(&mut pressure.p, &mut next);
+    pressure.scratch = next;
 }
 
 /// High-pressure fluid shoves into a lower-pressure neighbour.
