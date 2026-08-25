@@ -449,6 +449,18 @@ impl SimulationState {
                     reactions::fission_probability(cur.element_id, neutron_energy, cur.temperature);
                 if rng.f32() < prob {
                     self.trigger_fission(x, y, rng);
+                } else if cur.element_id == U238
+                    && rng.f32() < reactions::u238_capture_chance(neutron_energy)
+                {
+                    // P5a breeding via an adjacent neutron particle (the
+                    // particle is not consumed, mirroring how the fission
+                    // adjacency path treats it).
+                    self.grid.set(
+                        x,
+                        y,
+                        Particle::new(PU239, cur.temperature.saturating_add(60)),
+                    );
+                    self.reaction_count += 1;
                 }
             } else if rng.f32() < reactions::spontaneous_fission_prob(self.k_effective) {
                 self.trigger_fission(x, y, rng);
@@ -616,6 +628,15 @@ impl SimulationState {
                     let prob = reactions::fission_probability(cell_id, ev.energy, cell_temp);
                     if rng.f32() < prob {
                         self.trigger_fission(x, y, rng);
+                    } else if cell_id == U238
+                        && rng.f32() < reactions::u238_capture_chance(ev.energy)
+                    {
+                        // P5a breeding: U-238 + n -> Pu-239. The neutron is
+                        // consumed by the capture (the event was spent) and the
+                        // capture releases a few MeV of heat.
+                        self.grid
+                            .set(x, y, Particle::new(PU239, cell_temp.saturating_add(60)));
+                        self.reaction_count += 1;
                     } else {
                         self.grid.modify(x, y, |target| {
                             target.temperature = target.temperature.saturating_add(20);

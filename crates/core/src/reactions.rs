@@ -80,6 +80,19 @@ pub fn fission_base_probability(element_id: u16, energy: NeutronEnergy) -> f32 {
     }
 }
 
+/// U-238 neutron-capture (breeding) chance, applied when an incident neutron
+/// fails to fission the nucleus: U-238 + n → Pu-239. This is the real path to
+/// plutonium in thermal reactors, and it makes a breeder cycle possible in the
+/// toy: U-238 breeds Pu-239, Pu-239 is fissile (0.90 thermal), fissions, and
+/// its neutrons keep the cycle going.
+pub fn u238_capture_chance(energy: NeutronEnergy) -> f32 {
+    match energy {
+        NeutronEnergy::Thermal => 0.25,
+        NeutronEnergy::Epithermal => 0.20,
+        NeutronEnergy::Fast => 0.15,
+    }
+}
+
 /// Doppler temperature coefficient (per Kelvin above ambient). Negative for
 /// fissile isotopes: a hotter fuel lattice broadens resonance absorption, so
 /// reactivity falls — the feedback real reactors rely on to stay critical.

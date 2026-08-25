@@ -50,6 +50,35 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   62 integration + 10 unit tests green; fmt + clippy clean; claim checker
   updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
 
+### Phase P5a — Isotope model: U-238 breeding + depletion — 2026-08-24  ✅
+*Deliverable: `patches/P5a_isotope.patch`*
+
+- **Added** U-238 neutron-capture breeding: `reactions::u238_capture_chance`
+  (thermal 0.25 / epithermal 0.20 / fast 0.15) — when an incident neutron
+  fails to fission a U-238 nucleus, it may be captured: **U-238 + n → Pu-239**.
+  This is the real path to plutonium, and it closes a breeder cycle in the
+  toy: U-238 breeds Pu-239 → Pu-239 is fissile (0.90 thermal) → fissions →
+  its neutrons keep the cycle going. Hooked in both neutron paths (queue
+  events and particle adjacency).
+- **Gates (4 new tests):** `u238_breeds_pu239` (a U-238 block under a thermal
+  flux grows Pu-239); `enrichment_drops_as_pile_burns` (a 50%-enriched
+  moderated pile's U-235 fraction falls — U-235 fissions at 0.85 thermal vs
+  U-238's 0.02); `enrichment_raises_measured_k` (the same moderated geometry
+  multiplies better with a pure U-235 core than a 20% checkerboard — the
+  enrichment/critical-mass tie-in, measured with P4's `k_measured`);
+  `u238_capture_is_energy_ordered`.
+- **Zero drift:** the capture roll only draws RNG for U-238 cells, and no
+  golden-corpus scene contains U-238 — all six fingerprints and the P9a
+  replay hash are byte-identical. 75 integration + 10 unit tests green;
+  fmt + clippy clean; claim checker 13/13; feature suites still green.
+- **Save format stays v2:** no new persistent state was needed (breeding is
+  emergent from existing elements), and P4's additions were kept
+  serde-default/enum-append compatible — so the roadmap's "save v3" is
+  deferred until a phase actually adds incompatible state.
+- **Deferred:** per-cell isotope vectors / waste signature (heavy state for
+  little observable behaviour) and full decay chains to lead (would need
+  ~6 new elements; the one-step chains remain the documented simplification).
+
 ### Phase P4 — Neutron transport: 3-group moderation + measured k-effective — 2026-08-24  ✅
 *Deliverable: `patches/P4_transport.patch`*
 
