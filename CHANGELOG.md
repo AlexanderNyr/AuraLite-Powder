@@ -34,6 +34,22 @@ Work toward the ROADMAP phases, applied on top of the upstream `main`.
   hammer, continuous advection) — the steam-explosion impulse is the testable
   transient; the solver is a deeper, separate sub-phase.
 
+### Elements: Oil + Mercury (completes P8's "elements" sub-item) — 2026-08-24
+
+- **Added** two new elements, extending the registry to 50 (ids 0–49):
+  - **Oil** (id 48) — a flammable liquid lighter than water (density 0.85);
+    burns via the existing `is_flammable` fire-spread path.
+  - **Mercury** (id 49) — a very dense liquid (13.5) that sinks through water.
+- Both reuse the existing liquid physics — no new simulation code. The density
+  separation (mercury sinking through water) works through the existing
+  density-based `try_sink` in `update_liquid`.
+- **Tests:** `mercury_sinks_through_water`, `oil_flows_like_a_liquid`
+  (`tests/p8_elements.rs`); the P0 invariant
+  `invariant_registry_covers_every_id` now pins ids 0–49.
+- **Gates:** golden corpus unchanged (new ids don't touch existing scenes);
+  62 integration + 10 unit tests green; fmt + clippy clean; claim checker
+  updated (MAX_ELEMENT_ID 47→49, 48→50 constants).
+
 ### Phase P9a — Hardening: headless replay + long-run hash — 2026-08-24  ✅
 *Deliverable: `patches/P9a_replay.patch` (baseline: through `ci_green.patch`)*
 

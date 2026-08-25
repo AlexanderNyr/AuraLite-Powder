@@ -39,11 +39,11 @@ max_id = int(m.group(1)) if m else -1
 # Element ids run AIR=0 .. PIPE_STEAM=47 (48 ids). Exclude MAX_ELEMENT_ID itself.
 elem_consts = re.findall(r"^pub const ([A-Z0-9_]+): u16 = \d+;", eid, re.M)
 elem_only = [c for c in elem_consts if c != "MAX_ELEMENT_ID"]
-claim("MAX_ELEMENT_ID == 47", max_id == 47, f"found {max_id}")
-claim("element id constants == 48 (AIR..PIPE_STEAM)",
-      len(elem_only) == 48, f"found {len(elem_only)}")
-claim("id range is AIR=0 .. PIPE_STEAM=47",
-      "pub const AIR: u16 = 0;" in eid and "pub const PIPE_STEAM: u16 = 47;" in eid)
+claim("MAX_ELEMENT_ID == 49", max_id == 49, f"found {max_id}")
+claim("element id constants == 50 (AIR..MERCURY)",
+      len(elem_only) == 50, f"found {len(elem_only)}")
+claim("id range is AIR=0 .. MERCURY=49",
+      "pub const AIR: u16 = 0;" in eid and "pub const MERCURY: u16 = 49;" in eid)
 
 # --- Claim: Particle is 8 bytes (Fact 2) ---
 part = read(CRATES / "core/src/particle.rs")

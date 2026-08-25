@@ -48,8 +48,10 @@ pub const FILTER: u16 = 44;
 pub const IODINE: u16 = 45;
 pub const PIPE_WATER: u16 = 46;
 pub const PIPE_STEAM: u16 = 47;
+pub const OIL: u16 = 48; // flammable liquid, floats on water
+pub const MERCURY: u16 = 49; // very dense liquid, sinks through water
 
-pub const MAX_ELEMENT_ID: u16 = 47;
+pub const MAX_ELEMENT_ID: u16 = 49;
 
 pub fn is_valid_id(id: u16) -> bool {
     id <= MAX_ELEMENT_ID
@@ -71,7 +73,7 @@ pub fn kind_for_id(id: u16) -> ElementKind {
     match id {
         AIR => ElementKind::Air,
         SAND => ElementKind::Sand,
-        WATER | HEAVY_WATER | ACID => ElementKind::Liquid,
+        WATER | HEAVY_WATER | ACID | OIL | MERCURY => ElementKind::Liquid,
         STONE | CONCRETE | STEEL | LEAD | GRAPHITE | BORON | ICE | WOOD | WIRE | HEATER | PUMP
         | PIPE | PIPE_WATER | PIPE_STEAM | SENSOR | CONTROL_ROD | FILTER => ElementKind::Solid,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | FISSION_PRODUCTS | LITHIUM | FALLOUT
@@ -116,6 +118,8 @@ pub fn density_for_id(id: u16) -> f32 {
         FIRE => 0.02,
         WOOD => 0.7,
         ACID => 1.2,
+        OIL => 0.85,
+        MERCURY => 13.5,
         WIRE => 8.0,
         HEATER => 7.5,
         PUMP => 6.0,
@@ -154,7 +158,7 @@ pub fn is_radiation(id: u16) -> bool {
 }
 
 pub fn is_liquid(id: u16) -> bool {
-    matches!(id, WATER | HEAVY_WATER | MOLTEN_FUEL | ACID)
+    matches!(id, WATER | HEAVY_WATER | MOLTEN_FUEL | ACID | OIL | MERCURY)
 }
 
 pub fn is_gas(id: u16) -> bool {
@@ -226,7 +230,7 @@ pub fn is_powder(id: u16) -> bool {
 }
 
 pub fn is_flammable(id: u16) -> bool {
-    matches!(id, WOOD | COAL | TNT | HYDROGEN)
+    matches!(id, WOOD | COAL | TNT | HYDROGEN | OIL)
 }
 
 pub fn is_conductive(id: u16) -> bool {
@@ -249,6 +253,8 @@ pub fn flow_steps(id: u16) -> u32 {
     match id {
         WATER | ACID => 4,
         HEAVY_WATER => 3,
+        OIL => 3,
+        MERCURY => 2,
         MOLTEN_FUEL => 1,
         STEAM | HYDROGEN | HELIUM | FIRE | XENON | IODINE => 3,
         TRITIUM | DEUTERIUM => 2,
@@ -280,6 +286,8 @@ pub fn conductivity(id: u16) -> f32 {
         LEAD => 0.30,
         PIPE | PUMP | SENSOR | FILTER => 0.18,
         ACID => 0.12,
+        OIL => 0.10,
+        MERCURY => 0.60,
         FIRE | XENON | IODINE => 0.04,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM | MOLTEN_FUEL => 0.16,
         _ => 0.05,
@@ -289,7 +297,7 @@ pub fn conductivity(id: u16) -> f32 {
 /// Terminal fall speed in cells / tick.
 pub fn max_fall_speed(id: u16) -> i8 {
     match id {
-        WATER | HEAVY_WATER => 2,
+        WATER | HEAVY_WATER | OIL | MERCURY => 2,
         MOLTEN_FUEL => 2,
         SAND | FALLOUT | FISSION_PRODUCTS | TNT | LITHIUM => 3,
         U235 | U238 | PU239 | PU240 | DEPLETED_URANIUM => 3,

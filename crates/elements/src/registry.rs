@@ -609,6 +609,30 @@ pub fn all_definitions() -> Vec<ElementDef> {
             false,
             0,
         ),
+        def(
+            OIL,
+            "Oil",
+            Rgba::rgb(70, 45, 20),
+            0.85,
+            293,
+            0,
+            false,
+            false,
+            false,
+            0,
+        ),
+        def(
+            MERCURY,
+            "Mercury",
+            Rgba::rgb(200, 200, 210),
+            13.5,
+            293,
+            0,
+            false,
+            false,
+            false,
+            0,
+        ),
     ]
 }
 
@@ -692,6 +716,8 @@ pub fn name_for_id(id: u16) -> &'static str {
         IODINE => "Iodine",
         PIPE_WATER => "Pipe (water)",
         PIPE_STEAM => "Pipe (steam)",
+        OIL => "Oil",
+        MERCURY => "Mercury",
         _ => "Unknown",
     }
 }
